@@ -1,0 +1,26 @@
+# Compiled provider binary
+/xema-terraform-provider
+/terraform-provider-xema
+*.exe
+
+# Go
+/dist/
+/vendor/
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
