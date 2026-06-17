@@ -2,7 +2,10 @@ module github.com/xema-dev/xema-terraform-provider
 
 go 1.23
 
-require github.com/hashicorp/terraform-plugin-framework v1.13.0
+require (
+	github.com/hashicorp/terraform-plugin-framework v1.13.0
+	github.com/hashicorp/terraform-plugin-framework-jsontypes v0.2.0
+)
 
 require (
 	github.com/fatih/color v1.16.0 // indirect

@@ -51,6 +51,51 @@ resource "xema_model_resolution_rule" "by_project" {
   }
 }
 
+# A custom org role (permission set).
+resource "xema_role" "kb_editor" {
+  slug         = "kb-editor"
+  display_name = "Knowledge Base Editor"
+  description  = "Can edit knowledge-base deliverables."
+}
+
+# An organization. Create/delete requires a platform-admin (operator) token.
+resource "xema_org" "acme" {
+  name         = "acme-corp"
+  display_name = "Acme Corporation"
+  domain       = "acme.example.com"
+  metadata     = jsonencode({ tier = "enterprise" })
+}
+
+# A reusable deliverable spec (document template).
+resource "xema_deliverable_spec" "adr" {
+  slug     = "architecture-decision-record"
+  version  = "1.0.0"
+  title    = "Architecture Decision Record"
+  kind     = "DOCUMENT_TEMPLATE"
+  category = "architecture"
+  tags     = ["adr", "architecture"]
+  content  = "# {{title}}\n\n## Context\n\n## Decision\n\n## Consequences\n"
+}
+
+# An org-scoped biome installation (projectId null; version is service-managed).
+resource "xema_biome_install" "slack" {
+  biome_id     = "slack-connector"
+  config_json  = jsonencode({ defaultChannel = "#general" })
+  integrations = jsonencode([{ adapterKind = "chat", orgIntegrationId = "oi_123" }])
+  resources    = jsonencode([{ adapterKind = "chat", selector = { team = "T123" } }])
+}
+
+# An org portal (an org-scoped app). Opaque blobs are normalized JSON.
+resource "xema_portal" "ops" {
+  slug              = "ops"
+  display_name      = "Operations"
+  default_zone      = "default"
+  branding          = jsonencode({ primaryColor = "#0A66C2" })
+  lockfile          = jsonencode({ kernel = "1.0.0" })
+  installed_biomes  = jsonencode([])
+  capability_policy = jsonencode([])
+}
+
 data "xema_project" "lookup" {
   id = xema_project.demo.id
 }

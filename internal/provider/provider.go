@@ -115,6 +115,11 @@ func (p *xemaProvider) Resources(_ context.Context) []func() resource.Resource {
 		NewProjectResource,
 		NewProviderResource,
 		NewModelResolutionRuleResource,
+		NewRoleResource,
+		NewOrgResource,
+		NewDeliverableSpecResource,
+		NewBiomeInstallResource,
+		NewPortalResource,
 	}
 }
 

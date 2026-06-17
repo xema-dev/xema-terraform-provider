@@ -4,8 +4,11 @@
 package provider
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -98,4 +101,49 @@ func numberFromSpec(spec map[string]any, key string) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// normalizedToValue parses a jsontypes.Normalized JSON blob (object OR array)
+// into a Go value for inclusion in a spec. A null/unknown/empty value yields a
+// nil value so the field is omitted from the spec.
+func normalizedToValue(v jsontypes.Normalized) (any, error) {
+	if v.IsNull() || v.IsUnknown() || v.ValueString() == "" {
+		return nil, nil
+	}
+	var out any
+	if err := json.Unmarshal([]byte(v.ValueString()), &out); err != nil {
+		return nil, fmt.Errorf("parse JSON value: %w", err)
+	}
+	return out, nil
+}
+
+// specNormalized serializes a server-returned spec field (object or array) into
+// a jsontypes.Normalized. encoding/json sorts object keys deterministically, and
+// jsontypes compares semantically, so the round-trip is drift-free. A missing or
+// null field yields a normalized null.
+func specNormalized(spec map[string]any, key string) jsontypes.Normalized {
+	raw, ok := spec[key]
+	if !ok || raw == nil {
+		return jsontypes.NewNormalizedNull()
+	}
+	buf, err := json.Marshal(raw)
+	if err != nil {
+		return jsontypes.NewNormalizedNull()
+	}
+	return jsontypes.NewNormalizedValue(string(buf))
+}
+
+// stringList reads a []string field out of a server-returned spec map.
+func stringList(spec map[string]any, key string) []string {
+	raw, ok := spec[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }

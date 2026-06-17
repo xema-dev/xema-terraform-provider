@@ -49,6 +49,21 @@ per-resource REST surface:
 | `xema_project`                  | `project`               | project-registry-api  |
 | `xema_provider`                 | `provider`              | llm-registry-api      |
 | `xema_model_resolution_rule`    | `model-resolution-rule` | llm-registry-api      |
+| `xema_role`                     | `role`                  | authorization-api     |
+| `xema_org`                      | `org`                   | identity-api          |
+| `xema_deliverable_spec`         | `deliverable-spec`      | deliverable-specs-api |
+| `xema_biome_install`            | `biome-install`         | biome-host-api        |
+| `xema_portal`                   | `portal`                | app-runtime-api       |
+
+Opaque object/array fields (e.g. `metadata`, `config_json`, `branding`,
+`lockfile`, `integrations`, `resources`, `access_grants`) are typed as
+normalized JSON strings — Terraform compares them semantically, so formatting
+or key-order differences never show as drift.
+
+> **`xema_org`** is operator-scoped: creating/deleting an org requires a
+> platform-admin token; an org admin may only read/update their own org.
+> **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
+> the pinned biome version is service-managed and is not a declarable field.
 
 CRUD ↔ control-plane routes:
 

@@ -46,14 +46,19 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	}
 
 	resources := xp.Resources(context.Background())
-	if got := len(resources); got != 3 {
-		t.Fatalf("expected 3 resources, got %d", got)
+	if got := len(resources); got != 8 {
+		t.Fatalf("expected 8 resources, got %d", got)
 	}
 
 	wantResources := map[string]bool{
 		"xema_project":               false,
 		"xema_provider":              false,
 		"xema_model_resolution_rule": false,
+		"xema_role":                  false,
+		"xema_org":                   false,
+		"xema_deliverable_spec":      false,
+		"xema_biome_install":         false,
+		"xema_portal":                false,
 	}
 	for _, factory := range resources {
 		var resp resource.MetadataResponse
@@ -69,6 +74,25 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	for name, seen := range wantResources {
 		if !seen {
 			t.Errorf("resource %q not registered", name)
+		}
+	}
+}
+
+// TestResourceSchemasValid instantiates every registered resource and exercises
+// its Schema, asserting the framework reports no diagnostics — this catches a
+// malformed attribute (bad nesting, missing element type, etc.) at unit time.
+func TestResourceSchemasValid(t *testing.T) {
+	xp, ok := New("test")().(*xemaProvider)
+	if !ok {
+		t.Fatal("New did not return *xemaProvider")
+	}
+	for _, factory := range xp.Resources(context.Background()) {
+		var meta resource.MetadataResponse
+		factory().Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "xema"}, &meta)
+		var resp resource.SchemaResponse
+		factory().Schema(context.Background(), resource.SchemaRequest{}, &resp)
+		if resp.Diagnostics.HasError() {
+			t.Errorf("resource %q schema diagnostics: %v", meta.TypeName, resp.Diagnostics)
 		}
 	}
 
