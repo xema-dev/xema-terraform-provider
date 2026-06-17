@@ -23,6 +23,7 @@ import (
 // Environment variables used as fallbacks for the provider configuration.
 const (
 	envEndpoint = "XEMA_ENDPOINT"
+	envFleet    = "XEMA_FLEET_ENDPOINT"
 	envOrg      = "XEMA_ORG"
 	envToken    = "XEMA_TOKEN"
 )
@@ -44,9 +45,10 @@ func New(version string) func() provider.Provider {
 
 // providerModel maps the provider configuration block.
 type providerModel struct {
-	Endpoint types.String `tfsdk:"endpoint"`
-	Org      types.String `tfsdk:"org"`
-	Token    types.String `tfsdk:"token"`
+	Endpoint      types.String `tfsdk:"endpoint"`
+	FleetEndpoint types.String `tfsdk:"fleet_endpoint"`
+	Org           types.String `tfsdk:"org"`
+	Token         types.String `tfsdk:"token"`
 }
 
 func (p *xemaProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -61,6 +63,10 @@ func (p *xemaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 			"endpoint": schema.StringAttribute{
 				Optional:    true,
 				Description: "Base URL of the Xema control-plane-api. May also be set via the XEMA_ENDPOINT environment variable.",
+			},
+			"fleet_endpoint": schema.StringAttribute{
+				Optional:    true,
+				Description: "Base URL of the Xema fleet-control-api (operator plane). Required only for the `xema_distribution_lock` data source. May also be set via the XEMA_FLEET_ENDPOINT environment variable.",
 			},
 			"org": schema.StringAttribute{
 				Optional:    true,
@@ -83,6 +89,7 @@ func (p *xemaProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	endpoint := resolve(cfg.Endpoint, envEndpoint)
+	fleetEndpoint := resolve(cfg.FleetEndpoint, envFleet)
 	org := resolve(cfg.Org, envOrg)
 	token := resolve(cfg.Token, envToken)
 
@@ -105,7 +112,7 @@ func (p *xemaProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	c := client.New(endpoint, org, token, nil)
+	c := client.New(endpoint, fleetEndpoint, org, token, nil)
 	resp.DataSourceData = c
 	resp.ResourceData = c
 }
@@ -147,6 +154,7 @@ func (p *xemaProvider) DataSources(_ context.Context) []func() datasource.DataSo
 		NewDeliverableSpecDataSource,
 		NewBiomeInstallDataSource,
 		NewPortalDataSource,
+		NewDistributionLockDataSource,
 	}
 }
 

@@ -117,6 +117,20 @@ func normalizedToValue(v jsontypes.Normalized) (any, error) {
 	return out, nil
 }
 
+// normalizedFromValue serializes an arbitrary Go value (object or array) into a
+// jsontypes.Normalized, mirroring specNormalized for a value not keyed in a spec
+// map. A nil value yields a normalized null.
+func normalizedFromValue(v any) (jsontypes.Normalized, error) {
+	if v == nil {
+		return jsontypes.NewNormalizedNull(), nil
+	}
+	buf, err := json.Marshal(v)
+	if err != nil {
+		return jsontypes.NewNormalizedNull(), fmt.Errorf("serialize value: %w", err)
+	}
+	return jsontypes.NewNormalizedValue(string(buf)), nil
+}
+
 // specNormalized serializes a server-returned spec field (object or array) into
 // a jsontypes.Normalized. encoding/json sorts object keys deterministically, and
 // jsontypes compares semantically, so the round-trip is drift-free. A missing or

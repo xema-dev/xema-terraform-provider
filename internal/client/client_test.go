@@ -22,7 +22,7 @@ func TestCreateSendsAuthAndOrgHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(srv.URL+"/", "org-123", "tok-abc", srv.Client())
+	c := New(srv.URL+"/", "", "org-123", "tok-abc", srv.Client())
 	h, err := c.Create(context.Background(), "project", map[string]any{"name": "demo"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -54,7 +54,7 @@ func TestNotWiredKindSurfacesAsAPIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(srv.URL, "org-1", "tok", srv.Client())
+	c := New(srv.URL, "", "org-1", "tok", srv.Client())
 	_, err := c.Create(context.Background(), "skill", map[string]any{})
 	if err == nil {
 		t.Fatal("expected error for not-wired kind")
@@ -77,7 +77,7 @@ func TestReadNotFoundDetected(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(srv.URL, "org-1", "tok", srv.Client())
+	c := New(srv.URL, "", "org-1", "tok", srv.Client())
 	_, err := c.Read(context.Background(), "project", "missing")
 	if !IsNotFound(err) {
 		t.Fatalf("expected IsNotFound, got %v", err)

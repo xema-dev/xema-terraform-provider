@@ -93,6 +93,16 @@ Every kind also has a matching **data source** (`data.xema_<kind>`) for
 read-by-id lookups — the `id` is the only input; every spec field is exposed as
 a computed attribute.
 
+### `data.xema_distribution_lock` (operator plane)
+
+Resolves a Distribution + available-biome index into a `DistributionLock` via
+fleet-control-api. It is side-effect-free, so it is a **data source**, not a
+managed resource. Inputs/outputs are normalized JSON (`distribution`,
+`available_biomes` → `lock`). It targets the **operator plane**, so it needs the
+provider's `fleet_endpoint` (or `XEMA_FLEET_ENDPOINT`) set and a token that
+satisfies fleet-control's service-actor guard (a service token, not a plain
+org-admin user token).
+
 See [`examples/main.tf`](examples/main.tf) for a complete configuration.
 
 ## Development

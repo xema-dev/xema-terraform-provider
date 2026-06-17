@@ -30,25 +30,32 @@ import (
 // orgHeader is the canonical Xema tenant-routing header.
 const orgHeader = "X-Xema-Org-Id"
 
-// Client talks to a single control-plane-api endpoint for a single org.
+// Client talks to a single control-plane-api endpoint for a single org. It may
+// additionally hold a fleet-control-api endpoint for the operator-plane
+// `xema_distribution_lock` data source (distribution resolution lives there, not
+// on the control plane).
 type Client struct {
-	endpoint string
-	org      string
-	token    string
-	http     *http.Client
+	endpoint      string
+	fleetEndpoint string
+	org           string
+	token         string
+	http          *http.Client
 }
 
 // New constructs a Client. endpoint is the control-plane base URL (any trailing
-// slash is trimmed); org and token are the org id and org-admin bearer.
-func New(endpoint, org, token string, httpClient *http.Client) *Client {
+// slash is trimmed); fleetEndpoint is the optional fleet-control base URL (empty
+// when the operator plane is not configured); org and token are the org id and
+// bearer.
+func New(endpoint, fleetEndpoint, org, token string, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	return &Client{
-		endpoint: strings.TrimRight(endpoint, "/"),
-		org:      org,
-		token:    token,
-		http:     httpClient,
+		endpoint:      strings.TrimRight(endpoint, "/"),
+		fleetEndpoint: strings.TrimRight(fleetEndpoint, "/"),
+		org:           org,
+		token:         token,
+		http:          httpClient,
 	}
 }
 
@@ -93,6 +100,10 @@ func (c *Client) url(kind, id string) string {
 }
 
 func (c *Client) do(ctx context.Context, method, kind, id string, body any, out any) error {
+	return c.doURL(ctx, method, c.url(kind, id), body, out)
+}
+
+func (c *Client) doURL(ctx context.Context, method, url string, body any, out any) error {
 	var rdr io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
@@ -102,7 +113,7 @@ func (c *Client) do(ctx context.Context, method, kind, id string, body any, out 
 		rdr = bytes.NewReader(buf)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.url(kind, id), rdr)
+	req, err := http.NewRequestWithContext(ctx, method, url, rdr)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -185,4 +196,33 @@ func IsNotFound(err error) bool {
 		apiErr = e
 	}
 	return apiErr != nil && apiErr.Status == http.StatusNotFound
+}
+
+// resolveLockBody is the fleet-control resolve-lock request shape.
+type resolveLockBody struct {
+	Distribution    any   `json:"distribution"`
+	AvailableBiomes []any `json:"availableBiomes"`
+}
+
+// dataEnvelope unwraps fleet-control's `{ data: … }` response envelope.
+type dataEnvelope struct {
+	Data map[string]any `json:"data"`
+}
+
+// ResolveDistributionLock resolves a distribution + available-biome index into a
+// DistributionLock via fleet-control-api's `POST /provisioning/profiles/
+// resolve-lock`. It is side-effect-free. The fleet endpoint must be configured
+// (operator plane) and the token must satisfy fleet-control's ServiceActorGuard
+// — i.e. a service token, not a plain org-admin user token.
+func (c *Client) ResolveDistributionLock(ctx context.Context, distribution any, availableBiomes []any) (map[string]any, error) {
+	if c.fleetEndpoint == "" {
+		return nil, fmt.Errorf("fleet_endpoint (or XEMA_FLEET_ENDPOINT) must be set to use xema_distribution_lock")
+	}
+	url := c.fleetEndpoint + "/provisioning/profiles/resolve-lock"
+	var env dataEnvelope
+	if err := c.doURL(ctx, http.MethodPost, url,
+		resolveLockBody{Distribution: distribution, AvailableBiomes: availableBiomes}, &env); err != nil {
+		return nil, err
+	}
+	return env.Data, nil
 }
