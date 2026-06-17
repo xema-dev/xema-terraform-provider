@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
@@ -103,7 +104,25 @@ func TestResourceSchemasValid(t *testing.T) {
 		}
 	}
 
-	if got := len(xp.DataSources(context.Background())); got != 1 {
-		t.Fatalf("expected 1 data source, got %d", got)
+	if got := len(xp.DataSources(context.Background())); got != 15 {
+		t.Fatalf("expected 15 data sources, got %d", got)
+	}
+}
+
+// TestDataSourceSchemasValid instantiates every registered data source and
+// exercises its Schema, asserting the framework reports no diagnostics.
+func TestDataSourceSchemasValid(t *testing.T) {
+	xp, ok := New("test")().(*xemaProvider)
+	if !ok {
+		t.Fatal("New did not return *xemaProvider")
+	}
+	for _, factory := range xp.DataSources(context.Background()) {
+		var meta datasource.MetadataResponse
+		factory().Metadata(context.Background(), datasource.MetadataRequest{ProviderTypeName: "xema"}, &meta)
+		var resp datasource.SchemaResponse
+		factory().Schema(context.Background(), datasource.SchemaRequest{}, &resp)
+		if resp.Diagnostics.HasError() {
+			t.Errorf("data source %q schema diagnostics: %v", meta.TypeName, resp.Diagnostics)
+		}
 	}
 }

@@ -89,7 +89,9 @@ The server-minted `physicalId` is stored as the resource `id` in state.
 > plane never returns it on read, so it is not drift-detected. Secrets never
 > round-trip through the control plane.
 
-A `xema_project` **data source** is provided for read-by-id lookups.
+Every kind also has a matching **data source** (`data.xema_<kind>`) for
+read-by-id lookups — the `id` is the only input; every spec field is exposed as
+a computed attribute.
 
 See [`examples/main.tf`](examples/main.tf) for a complete configuration.
 

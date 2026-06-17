@@ -133,6 +133,20 @@ func (p *xemaProvider) Resources(_ context.Context) []func() resource.Resource {
 func (p *xemaProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewProjectDataSource,
+		NewProviderDataSource,
+		NewModelDataSource,
+		NewModelResolutionRuleDataSource,
+		NewAgentDataSource,
+		NewSkillDataSource,
+		NewRoleDataSource,
+		NewGrantDataSource,
+		NewTeamDataSource,
+		NewEnvironmentDataSource,
+		NewSpaceDataSource,
+		NewOrgDataSource,
+		NewDeliverableSpecDataSource,
+		NewBiomeInstallDataSource,
+		NewPortalDataSource,
 	}
 }
 
