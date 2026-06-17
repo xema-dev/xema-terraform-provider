@@ -120,6 +120,13 @@ func (p *xemaProvider) Resources(_ context.Context) []func() resource.Resource {
 		NewDeliverableSpecResource,
 		NewBiomeInstallResource,
 		NewPortalResource,
+		NewAgentResource,
+		NewGrantResource,
+		NewTeamResource,
+		NewEnvironmentResource,
+		NewSkillResource,
+		NewModelResource,
+		NewSpaceResource,
 	}
 }
 

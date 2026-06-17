@@ -40,16 +40,22 @@ provider sends the canonical `X-Xema-Org-Id` tenant header for routing parity.
 
 ## Resources
 
-The provider exposes the resource kinds that the control plane has **wired**
-(other kinds return `501 RESOURCE_KIND_NOT_WIRED`). Every CRUD verb maps to the
-per-resource REST surface:
+The provider exposes **all 15** resource kinds the control plane wires. Every
+CRUD verb maps to the per-resource REST surface:
 
 | Terraform                       | Kind                    | Backing service       |
 | ------------------------------- | ----------------------- | --------------------- |
 | `xema_project`                  | `project`               | project-registry-api  |
 | `xema_provider`                 | `provider`              | llm-registry-api      |
+| `xema_model`                    | `model`                 | llm-registry-api      |
 | `xema_model_resolution_rule`    | `model-resolution-rule` | llm-registry-api      |
+| `xema_agent`                    | `agent`                 | llm-registry-api      |
+| `xema_skill`                    | `skill`                 | skill-registry-api    |
 | `xema_role`                     | `role`                  | authorization-api     |
+| `xema_grant`                    | `grant`                 | authorization-api     |
+| `xema_team`                     | `team`                  | authorization-api     |
+| `xema_environment`              | `environment`           | authorization-api     |
+| `xema_space`                    | `space`                 | space-registry-api    |
 | `xema_org`                      | `org`                   | identity-api          |
 | `xema_deliverable_spec`         | `deliverable-spec`      | deliverable-specs-api |
 | `xema_biome_install`            | `biome-install`         | biome-host-api        |
@@ -64,6 +70,9 @@ or key-order differences never show as drift.
 > platform-admin token; an org admin may only read/update their own org.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field.
+> **`xema_space`** updates `classification` in place; changing `ref`,
+> `display_name`, or `labels` forces replacement (the owning service's update is
+> classification-only).
 
 CRUD ↔ control-plane routes:
 
