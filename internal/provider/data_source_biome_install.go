@@ -48,10 +48,10 @@ func (d *biomeInstallDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Install configuration as a JSON object.",
 			},
-			"integrations": schema.StringAttribute{
+			"connections": schema.StringAttribute{
 				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
-				Description: "Bound org integrations as a JSON array of { adapterKind, orgIntegrationId }.",
+				Description: "Bound org connections as a JSON array of { adapterKind, orgConnectionId }.",
 			},
 			"resources": schema.StringAttribute{
 				Computed:    true,

@@ -43,7 +43,7 @@ type biomeInstallModel struct {
 	ID           types.String         `tfsdk:"id"`
 	BiomeID      types.String         `tfsdk:"biome_id"`
 	ConfigJson   jsontypes.Normalized `tfsdk:"config_json"`
-	Integrations jsontypes.Normalized `tfsdk:"integrations"`
+	Connections jsontypes.Normalized `tfsdk:"connections"`
 	Resources    jsontypes.Normalized `tfsdk:"resources"`
 }
 
@@ -73,10 +73,10 @@ func (r *biomeInstallResource) Schema(_ context.Context, _ resource.SchemaReques
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Install configuration as a JSON object.",
 			},
-			"integrations": schema.StringAttribute{
+			"connections": schema.StringAttribute{
 				Required:    true,
 				CustomType:  jsontypes.NormalizedType{},
-				Description: "Bound org integrations as a JSON array of { adapterKind, orgIntegrationId }.",
+				Description: "Bound org connections as a JSON array of { adapterKind, orgConnectionId }.",
 			},
 			"resources": schema.StringAttribute{
 				Required:    true,
@@ -104,12 +104,12 @@ func (m biomeInstallModel) toSpec() (map[string]any, error) {
 		spec["configJson"] = configJson
 	}
 
-	integrations, err := normalizedToValue(m.Integrations)
+	integrations, err := normalizedToValue(m.Connections)
 	if err != nil {
 		return nil, err
 	}
 	if integrations != nil {
-		spec["integrations"] = integrations
+		spec["connections"] = integrations
 	}
 
 	resources, err := normalizedToValue(m.Resources)
@@ -126,7 +126,7 @@ func (m biomeInstallModel) toSpec() (map[string]any, error) {
 func (m *biomeInstallModel) applyReadback(spec map[string]any) {
 	m.BiomeID = types.StringValue(specString(spec, "biomeId"))
 	m.ConfigJson = specNormalized(spec, "configJson")
-	m.Integrations = specNormalized(spec, "integrations")
+	m.Connections = specNormalized(spec, "connections")
 	m.Resources = specNormalized(spec, "resources")
 }
 
