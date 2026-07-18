@@ -104,12 +104,12 @@ func (m biomeInstallModel) toSpec() (map[string]any, error) {
 		spec["configJson"] = configJson
 	}
 
-	integrations, err := normalizedToValue(m.Connections)
+	connections, err := normalizedToValue(m.Connections)
 	if err != nil {
 		return nil, err
 	}
-	if integrations != nil {
-		spec["connections"] = integrations
+	if connections != nil {
+		spec["connections"] = connections
 	}
 
 	resources, err := normalizedToValue(m.Resources)

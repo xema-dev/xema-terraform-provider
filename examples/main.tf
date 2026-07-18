@@ -81,7 +81,7 @@ resource "xema_deliverable_spec" "adr" {
 resource "xema_biome_install" "slack" {
   biome_id     = "slack-connector"
   config_json  = jsonencode({ defaultChannel = "#general" })
-  connections = jsonencode([{ adapterKind = "chat", orgIntegrationId = "oi_123" }])
+  connections = jsonencode([{ adapterKind = "chat", orgConnectionId = "oi_123" }])
   resources    = jsonencode([{ adapterKind = "chat", selector = { team = "T123" } }])
 }
 
