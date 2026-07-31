@@ -40,11 +40,11 @@ func NewBiomeInstallResource() resource.Resource {
 // org-scoped; `biome_id` is the immutable natural key (one install per biomeId
 // per org). The pinned version is service-managed and not represented here.
 type biomeInstallModel struct {
-	ID           types.String         `tfsdk:"id"`
-	BiomeID      types.String         `tfsdk:"biome_id"`
-	ConfigJson   jsontypes.Normalized `tfsdk:"config_json"`
+	ID          types.String         `tfsdk:"id"`
+	BiomeID     types.String         `tfsdk:"biome_id"`
+	ConfigJson  jsontypes.Normalized `tfsdk:"config_json"`
 	Connections jsontypes.Normalized `tfsdk:"connections"`
-	Resources    jsontypes.Normalized `tfsdk:"resources"`
+	Resources   jsontypes.Normalized `tfsdk:"resources"`
 }
 
 func (r *biomeInstallResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
