@@ -47,3 +47,18 @@ jobs:
 
       - name: go test
         run: go test ./...
+
+      # A tracked source file carrying a raw NUL is classified BINARY by ripgrep,
+      # ugrep and `grep -I` — they skip the whole file and report zero matches,
+      # so it is invisible to every audit and every grep-based check.
+      # Self-contained (node builtins only): no install, nothing to lock.
+      # ubuntu-latest ships a node, but the pin is explicit so the gate does not
+      # depend on whatever version the runner image happens to carry.
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        timeout-minutes: 5  # setup-node stalls indefinitely on this fleet; fail loudly instead of masking later steps
+        with:
+          node-version: '24'
+
+      - name: Every tracked source file is readable by search
+        run: node tooling/boundaries/lib/source-readability.mjs
