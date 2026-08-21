@@ -58,7 +58,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         timeout-minutes: 5  # setup-node stalls indefinitely on this fleet; fail loudly instead of masking later steps
         with:
-          node-version: '24'
+          node-version-file: .node-version
 
       - name: Every tracked source file is readable by search
         run: node tooling/boundaries/lib/source-readability.mjs
