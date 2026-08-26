@@ -198,10 +198,21 @@ func IsNotFound(err error) bool {
 	return apiErr != nil && apiErr.Status == http.StatusNotFound
 }
 
-// resolveLockBody is the fleet-control resolve-lock request shape.
+// resolveLockBody is the fleet-control resolve-lock request shape. All four
+// fields are REQUIRED by the endpoint: it resolves purely over what it is
+// given and derives none of them. `capabilityDomainOwners` is the
+// platform-reserved (domain -> owning biome) table stamped onto the lock —
+// never derived from `availableBiomes`, because that pool is caller-composed
+// and deriving would let a third-party biome mint itself a reservation.
+// `platformServiceSources` binds each declared platform service to the exact
+// repository, commit, version and manifest hash a deployment builds from;
+// fleet-control holds no platform-service index, so a lock built without it
+// would name something no build produced.
 type resolveLockBody struct {
-	Distribution    any   `json:"distribution"`
-	AvailableBiomes []any `json:"availableBiomes"`
+	Distribution           any   `json:"distribution"`
+	AvailableBiomes        []any `json:"availableBiomes"`
+	CapabilityDomainOwners []any `json:"capabilityDomainOwners"`
+	PlatformServiceSources []any `json:"platformServiceSources"`
 }
 
 // dataEnvelope unwraps fleet-control's `{ data: … }` response envelope.
@@ -214,14 +225,18 @@ type dataEnvelope struct {
 // resolve-lock`. It is side-effect-free. The fleet endpoint must be configured
 // (operator plane) and the token must satisfy fleet-control's ServiceActorGuard
 // — i.e. a service token, not a plain org-admin user token.
-func (c *Client) ResolveDistributionLock(ctx context.Context, distribution any, availableBiomes []any) (map[string]any, error) {
+func (c *Client) ResolveDistributionLock(ctx context.Context, distribution any, availableBiomes []any, capabilityDomainOwners []any, platformServiceSources []any) (map[string]any, error) {
 	if c.fleetEndpoint == "" {
 		return nil, fmt.Errorf("fleet_endpoint (or XEMA_FLEET_ENDPOINT) must be set to use xema_distribution_lock")
 	}
 	url := c.fleetEndpoint + "/provisioning/profiles/resolve-lock"
 	var env dataEnvelope
-	if err := c.doURL(ctx, http.MethodPost, url,
-		resolveLockBody{Distribution: distribution, AvailableBiomes: availableBiomes}, &env); err != nil {
+	if err := c.doURL(ctx, http.MethodPost, url, resolveLockBody{
+		Distribution:           distribution,
+		AvailableBiomes:        availableBiomes,
+		CapabilityDomainOwners: capabilityDomainOwners,
+		PlatformServiceSources: platformServiceSources,
+	}, &env); err != nil {
 		return nil, err
 	}
 	return env.Data, nil

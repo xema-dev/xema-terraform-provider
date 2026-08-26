@@ -97,13 +97,30 @@ a computed attribute.
 
 Resolves a Distribution + available-biome index into a `DistributionLock` via
 fleet-control-api. It is side-effect-free, so it is a **data source**, not a
-managed resource. Inputs/outputs are normalized JSON (`distribution`,
-`available_biomes` → `lock`). It targets the **operator plane**, so it needs the
-provider's `fleet_endpoint` (or `XEMA_FLEET_ENDPOINT`) set and a token that
-satisfies fleet-control's service-actor guard (a service token, not a plain
-org-admin user token).
+managed resource. Inputs and outputs are normalized JSON. It targets the
+**operator plane**, so it needs the provider's `fleet_endpoint` (or
+`XEMA_FLEET_ENDPOINT`) set and a token that satisfies fleet-control's
+service-actor guard (a service token, not a plain org-admin user token).
 
-See [`examples/main.tf`](examples/main.tf) for a complete configuration.
+**All four inputs are required.** The endpoint resolves purely over what it is
+given and derives none of them — supplying fewer is a `422`, not a leaner lock:
+
+| Input | What it is |
+|---|---|
+| `distribution` | the `Distribution` to resolve (`schemaVersion`, `id`, `include[]`, …) |
+| `available_biomes` | the biome index to resolve against, as an array of `AvailableBiome` objects |
+| `capability_domain_owners` | the platform-reserved `{domain, biomeId}` table, non-empty |
+| `platform_service_sources` | exact `{name, tier, repo, commit, version, sourceManifestHash}` per declared platform service |
+
+The last two are deliberately not derived. `available_biomes` is a
+caller-composed pool, so deriving the reservation table from it would leave a
+domain unreserved whenever its owning biome is trimmed out — and would let a
+third-party biome in the pool mint itself a reservation. `platform_service_sources`
+binds the repository, commit and manifest hash a deployment builds from, which
+fleet-control cannot know: it holds no platform-service index, and a guessed
+source would name something no build produced.
+
+The output `lock` is the resolved `DistributionLock` (schema version 2).
 
 ## Development
 
