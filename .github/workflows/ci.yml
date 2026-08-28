@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Recovery path for a SHA whose push run was lost or cancelled: without
+  # this, the ONLY way to get a run for a commit is another push. A manual
+  # run reports the commit's verdict; it does not stand in for the push
+  # event, so anything keyed on `workflow_run.event == 'push'` correctly
+  # ignores it and no downstream build or publish can be triggered this way.
+  workflow_dispatch:
 
 permissions:
   contents: read
