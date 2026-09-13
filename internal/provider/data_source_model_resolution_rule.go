@@ -43,12 +43,12 @@ func (d *modelResolutionRuleDataSource) Schema(_ context.Context, _ datasource.S
 				Computed:    true,
 				Description: "Dimensional selector. An empty/absent selector is the DEFAULT rule (set is_default).",
 				Attributes: map[string]schema.Attribute{
-					"agent":       schema.StringAttribute{Computed: true, Description: "Match on agent slug."},
-					"skill":       schema.StringAttribute{Computed: true, Description: "Match on skill slug."},
-					"project":     schema.StringAttribute{Computed: true, Description: "Match on project id."},
-					"stage":       schema.StringAttribute{Computed: true, Description: "Match on pipeline stage/phase key."},
-					"purpose":     schema.StringAttribute{Computed: true, Description: "Match on invocation purpose."},
-					"model_class": schema.StringAttribute{Computed: true, Description: "Match on the resolving agent's model class (e.g. coding, review) — the Phase-4 modelClass dimension."},
+					"agent":      schema.StringAttribute{Computed: true, Description: "Match on agent slug."},
+					"skill":      schema.StringAttribute{Computed: true, Description: "Match on skill slug."},
+					"project":    schema.StringAttribute{Computed: true, Description: "Match on project id."},
+					"stage":      schema.StringAttribute{Computed: true, Description: "Match on pipeline stage/phase key."},
+					"purpose":    schema.StringAttribute{Computed: true, Description: "Match on invocation purpose."},
+					"model_lane": schema.StringAttribute{Computed: true, Description: modelLaneSelectorDescription},
 					"extra": schema.MapAttribute{
 						Computed:    true,
 						ElementType: types.StringType,
@@ -68,9 +68,9 @@ func (d *modelResolutionRuleDataSource) Schema(_ context.Context, _ datasource.S
 				Computed:    true,
 				Description: "Resolve within a specific provider slug.",
 			},
-			"target_model_class": schema.StringAttribute{
+			"target_model_lane": schema.StringAttribute{
 				Computed:    true,
-				Description: "Resolve by model strategy class.",
+				Description: modelLaneTargetDescription,
 			},
 			"target_temperature": schema.Float64Attribute{
 				Computed:    true,

@@ -20,6 +20,30 @@ import (
 // Resolution Matrix rules.
 const modelResolutionRuleKind = "model-resolution-rule"
 
+// The model-lane attribute descriptions, declared ONCE because the resource and
+// the data source must describe the same wire field and the data source reuses
+// this file's mrrModel — two copies could drift into describing one field two
+// ways.
+//
+// They deliberately name NO lane as a platform value. The closed
+// `ModelClass` enum these attributes were built against is deleted: every lane
+// is now declared by a `model-lane` contribution, so the admissible set is a
+// property of what an organisation has installed and the only honest answer is
+// the endpoint that can enumerate it. The four an ordinary deployment sees come
+// from the `agent-runtime` biome and are named as its contributions, not as a
+// kernel core.
+const (
+	modelLaneSelectorDescription = "Match on the resolving agent's model lane — the `modelLane` dimension, " +
+		"so one rule routes every agent on that lane. OPEN vocabulary with no kernel core: each lane is " +
+		"declared by a `model-lane` contribution, and `GET /work-kinds?kind=model-lane` enumerates the lanes " +
+		"this organisation may use (the `agent-runtime` biome contributes `general-purpose`, `coder`, " +
+		"`planner` and `light`). An undeclared lane is refused when the rule is written, not at resolve time."
+
+	modelLaneTargetDescription = "Model lane this rule routes through. Required when `target_kind` is `strategy`. " +
+		"OPEN vocabulary declared by `model-lane` contributions — see `GET /work-kinds?kind=model-lane` for the " +
+		"lanes this organisation may use."
+)
+
 var (
 	_ resource.Resource                = (*modelResolutionRuleResource)(nil)
 	_ resource.ResourceWithConfigure   = (*modelResolutionRuleResource)(nil)
@@ -39,13 +63,13 @@ func NewModelResolutionRuleResource() resource.Resource {
 // (agent/skill/project/stage/purpose) are typed; `extra` carries any
 // registry-added dimension as a string map.
 type selectorModel struct {
-	Agent      types.String `tfsdk:"agent"`
-	Skill      types.String `tfsdk:"skill"`
-	Project    types.String `tfsdk:"project"`
-	Stage      types.String `tfsdk:"stage"`
-	Purpose    types.String `tfsdk:"purpose"`
-	ModelClass types.String `tfsdk:"model_class"`
-	Extra      types.Map    `tfsdk:"extra"`
+	Agent     types.String `tfsdk:"agent"`
+	Skill     types.String `tfsdk:"skill"`
+	Project   types.String `tfsdk:"project"`
+	Stage     types.String `tfsdk:"stage"`
+	Purpose   types.String `tfsdk:"purpose"`
+	ModelLane types.String `tfsdk:"model_lane"`
+	Extra     types.Map    `tfsdk:"extra"`
 }
 
 // mrrModel mirrors the model-resolution-rule kind spec.
@@ -55,7 +79,7 @@ type mrrModel struct {
 	TargetKind         types.String   `tfsdk:"target_kind"`
 	TargetModelID      types.String   `tfsdk:"target_model_id"`
 	TargetProviderSlug types.String   `tfsdk:"target_provider_slug"`
-	TargetModelClass   types.String   `tfsdk:"target_model_class"`
+	TargetModelLane    types.String   `tfsdk:"target_model_lane"`
 	TargetTemperature  types.Float64  `tfsdk:"target_temperature"`
 	Priority           types.Int64    `tfsdk:"priority"`
 	IsDefault          types.Bool     `tfsdk:"is_default"`
@@ -81,12 +105,12 @@ func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.Schem
 				Optional:    true,
 				Description: "Dimensional selector. An empty/absent selector is the DEFAULT rule (set is_default).",
 				Attributes: map[string]schema.Attribute{
-					"agent":       schema.StringAttribute{Optional: true, Description: "Match on agent slug."},
-					"skill":       schema.StringAttribute{Optional: true, Description: "Match on skill slug."},
-					"project":     schema.StringAttribute{Optional: true, Description: "Match on project id."},
-					"stage":       schema.StringAttribute{Optional: true, Description: "Match on pipeline stage/phase key."},
-					"purpose":     schema.StringAttribute{Optional: true, Description: "Match on invocation purpose."},
-					"model_class": schema.StringAttribute{Optional: true, Description: "Match on the resolving agent's model class (e.g. coding, review) — the Phase-4 modelClass dimension."},
+					"agent":      schema.StringAttribute{Optional: true, Description: "Match on agent slug."},
+					"skill":      schema.StringAttribute{Optional: true, Description: "Match on skill slug."},
+					"project":    schema.StringAttribute{Optional: true, Description: "Match on project id."},
+					"stage":      schema.StringAttribute{Optional: true, Description: "Match on pipeline stage/phase key."},
+					"purpose":    schema.StringAttribute{Optional: true, Description: "Match on invocation purpose."},
+					"model_lane": schema.StringAttribute{Optional: true, Description: modelLaneSelectorDescription},
 					"extra": schema.MapAttribute{
 						Optional:    true,
 						ElementType: types.StringType,
@@ -106,9 +130,9 @@ func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.Schem
 				Optional:    true,
 				Description: "Resolve within a specific provider slug.",
 			},
-			"target_model_class": schema.StringAttribute{
+			"target_model_lane": schema.StringAttribute{
 				Optional:    true,
-				Description: "Resolve by model strategy class.",
+				Description: modelLaneTargetDescription,
 			},
 			"target_temperature": schema.Float64Attribute{
 				Optional:    true,
@@ -152,8 +176,8 @@ func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {
 		if v := optString(m.Selector.Purpose); v != "" {
 			sel["purpose"] = v
 		}
-		if v := optString(m.Selector.ModelClass); v != "" {
-			sel["modelClass"] = v
+		if v := optString(m.Selector.ModelLane); v != "" {
+			sel["modelLane"] = v
 		}
 		if !m.Selector.Extra.IsNull() && !m.Selector.Extra.IsUnknown() {
 			extra := map[string]string{}
@@ -173,8 +197,8 @@ func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {
 	if v := optString(m.TargetProviderSlug); v != "" {
 		spec["targetProviderSlug"] = v
 	}
-	if v := optString(m.TargetModelClass); v != "" {
-		spec["targetModelClass"] = v
+	if v := optString(m.TargetModelLane); v != "" {
+		spec["targetModelLane"] = v
 	}
 	if !m.TargetTemperature.IsNull() && !m.TargetTemperature.IsUnknown() {
 		spec["targetTemperature"] = m.TargetTemperature.ValueFloat64()
@@ -192,7 +216,7 @@ func (m *mrrModel) applyReadback(ctx context.Context, spec map[string]any) error
 	m.TargetKind = types.StringValue(specString(spec, "targetKind"))
 	m.TargetModelID = strOrNull(specString(spec, "targetModelId"))
 	m.TargetProviderSlug = strOrNull(specString(spec, "targetProviderSlug"))
-	m.TargetModelClass = strOrNull(specString(spec, "targetModelClass"))
+	m.TargetModelLane = strOrNull(specString(spec, "targetModelLane"))
 
 	if v, ok := numberFromSpec(spec, "targetTemperature"); ok {
 		m.TargetTemperature = types.Float64Value(v)
@@ -212,13 +236,13 @@ func (m *mrrModel) applyReadback(ctx context.Context, spec map[string]any) error
 
 	if rawSel, ok := spec["selector"].(map[string]any); ok && len(rawSel) > 0 {
 		sel := &selectorModel{
-			Agent:      strOrNull(specString(rawSel, "agent")),
-			Skill:      strOrNull(specString(rawSel, "skill")),
-			Project:    strOrNull(specString(rawSel, "project")),
-			Stage:      strOrNull(specString(rawSel, "stage")),
-			Purpose:    strOrNull(specString(rawSel, "purpose")),
-			ModelClass: strOrNull(specString(rawSel, "modelClass")),
-			Extra:      types.MapNull(types.StringType),
+			Agent:     strOrNull(specString(rawSel, "agent")),
+			Skill:     strOrNull(specString(rawSel, "skill")),
+			Project:   strOrNull(specString(rawSel, "project")),
+			Stage:     strOrNull(specString(rawSel, "stage")),
+			Purpose:   strOrNull(specString(rawSel, "purpose")),
+			ModelLane: strOrNull(specString(rawSel, "modelLane")),
+			Extra:     types.MapNull(types.StringType),
 		}
 		if rawExtra, ok := rawSel["extra"].(map[string]any); ok && len(rawExtra) > 0 {
 			elems := map[string]string{}
