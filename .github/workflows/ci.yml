@@ -1,10 +1,15 @@
 name: CI
 
 on:
+  # `develop` is where every ordinary change lands (.claude/rules/branch-model.md),
+  # so a workflow triggered on `main` alone grades nothing until promotion — and
+  # the absence reads as a queue rather than as a gap. Measured 2026-09-21: a
+  # push to develop here produced NO RUN at all, so the build/vet/fmt/test
+  # verdict simply did not exist for the commit that needed it.
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   # Recovery path for a SHA whose push run was lost or cancelled: without
   # this, the ONLY way to get a run for a commit is another push. A manual
   # run reports the commit's verdict; it does not stand in for the push
