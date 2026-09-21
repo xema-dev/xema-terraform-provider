@@ -48,6 +48,7 @@ CRUD verb maps to the per-resource REST surface:
 | `xema_project`                  | `project`               | project-registry-api  |
 | `xema_provider`                 | `provider`              | llm-registry-api      |
 | `xema_model`                    | `model`                 | llm-registry-api      |
+| `xema_model_strategy`           | `model-strategy`        | llm-registry-api      |
 | `xema_model_resolution_rule`    | `model-resolution-rule` | llm-registry-api      |
 | `xema_agent`                    | `agent`                 | llm-registry-api      |
 | `xema_skill`                    | `skill`                 | skill-registry-api    |
