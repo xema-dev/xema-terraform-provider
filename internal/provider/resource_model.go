@@ -89,7 +89,11 @@ func (r *modelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Description: "Model modalities.",
 			},
 			"is_active": schema.BoolAttribute{
-				Optional:    true,
+				Optional: true,
+				// `ModelResponseDto.isActive` is a REQUIRED boolean, so a
+				// declaration that omits it plans null and the create reads back
+				// `false`. Optional alone makes Terraform refuse its own result.
+				Computed:    true,
 				Description: "Whether the model is active.",
 			},
 		},
