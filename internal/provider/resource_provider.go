@@ -20,9 +20,10 @@ import (
 const providerKind = "provider"
 
 var (
-	_ resource.Resource                = (*providerResource)(nil)
-	_ resource.ResourceWithConfigure   = (*providerResource)(nil)
-	_ resource.ResourceWithImportState = (*providerResource)(nil)
+	_ resource.Resource                   = (*providerResource)(nil)
+	_ resource.ResourceWithConfigure      = (*providerResource)(nil)
+	_ resource.ResourceWithImportState    = (*providerResource)(nil)
+	_ resource.ResourceWithValidateConfig = (*providerResource)(nil)
 )
 
 type providerResource struct {
@@ -37,6 +38,13 @@ func NewProviderResource() resource.Resource {
 // providerSpecModel mirrors the `provider` kind spec served by llm-registry-api
 // through the control plane. apiKey is write-only: the service never returns it,
 // so it is not refreshed on Read (no drift detection on the secret — by design).
+//
+// credentialRef is the OTHER credential form and it is NOT write-only: it is an
+// opaque pointer rather than a secret, so the service returns it and it IS
+// drift-detected. That asymmetry is the point of preferring it in IaC — an
+// operator can see that a provider they declared by reference was switched to
+// an inline key by hand, which is drift they are entitled to see, and which an
+// unreadable api_key can never show.
 type providerSpecModel struct {
 	ID                    types.String `tfsdk:"id"`
 	Name                  types.String `tfsdk:"name"`
@@ -45,6 +53,7 @@ type providerSpecModel struct {
 	BaseURL               types.String `tfsdk:"base_url"`
 	AuthType              types.String `tfsdk:"auth_type"`
 	APIKey                types.String `tfsdk:"api_key"`
+	CredentialRef         types.String `tfsdk:"credential_ref"`
 	MaxConcurrentRequests types.Int64  `tfsdk:"max_concurrent_requests"`
 	IsActive              types.Bool   `tfsdk:"is_active"`
 }
@@ -86,9 +95,18 @@ func (r *providerResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				Description: "Provider authentication type.",
 			},
 			"api_key": schema.StringAttribute{
-				Optional:    true,
-				Sensitive:   true,
-				Description: "Provider API key. Write-only: the service never returns it, so it is not drift-detected.",
+				Optional:  true,
+				Sensitive: true,
+				Description: "Provider API key. Write-only: the service never returns it, so it is not " +
+					"drift-detected. Exactly one of `api_key` or `credential_ref` is required. " +
+					"PREFER `credential_ref`: a key set here reaches a tfvars file, a plan and the " +
+					"state backend, none of which is where a secret belongs.",
+			},
+			"credential_ref": schema.StringAttribute{
+				Optional: true,
+				Description: "Opaque credential-binding id held by the credential plane. Exactly one of " +
+					"`api_key` or `credential_ref` is required. The bytes never pass through this " +
+					"configuration at all — the service resolves the binding when it needs the key.",
 			},
 			"max_concurrent_requests": schema.Int64Attribute{
 				Optional:    true,
@@ -108,6 +126,50 @@ func (r *providerResource) Configure(_ context.Context, req resource.ConfigureRe
 	r.client = clientFromResource(req, &resp.Diagnostics)
 }
 
+// ValidateConfig refuses a provider that names NEITHER credential form or BOTH,
+// at PLAN time.
+//
+// The service refuses both cases too — `@ExactlyOneCredentialForm` on the DTO,
+// and a CHECK constraint under it — so this is not the fence. It is the
+// difference between reading the refusal in `tofu plan`, where the author can
+// fix it, and reading it as an API error in the middle of an apply that has
+// already created other resources.
+//
+// Written as ValidateConfig rather than an attribute validator on purpose:
+// `stringvalidator.ExactlyOneOf` lives in terraform-plugin-framework-validators,
+// which this provider does not depend on, and one cross-field rule does not
+// earn a new module in the dependency graph of a provider customers run.
+func (r *providerResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg providerSpecModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Unknown at plan time (a value that comes from another resource) is not
+	// absent — refusing it would break the ordinary case of a credential
+	// binding created in the same apply.
+	hasKey := !cfg.APIKey.IsNull() || cfg.APIKey.IsUnknown()
+	hasRef := !cfg.CredentialRef.IsNull() || cfg.CredentialRef.IsUnknown()
+
+	switch {
+	case hasKey && hasRef:
+		resp.Diagnostics.AddError(
+			"Exactly one credential form",
+			"`api_key` and `credential_ref` are mutually exclusive: a provider holds one "+
+				"credential, and two would be two answers with no declared precedence. "+
+				"Remove one.",
+		)
+	case !hasKey && !hasRef:
+		resp.Diagnostics.AddError(
+			"Exactly one credential form",
+			"A provider needs a credential: set `credential_ref` (preferred — the bytes "+
+				"stay in the credential plane) or `api_key`. Neither was set, and a "+
+				"provider with no credential fails when an agent runs rather than here.",
+		)
+	}
+}
+
 func (m providerSpecModel) toSpec() map[string]any {
 	spec := map[string]any{
 		"name":    m.Name.ValueString(),
@@ -121,6 +183,9 @@ func (m providerSpecModel) toSpec() map[string]any {
 	if v := optString(m.APIKey); v != "" {
 		spec["apiKey"] = v
 	}
+	if v := optString(m.CredentialRef); v != "" {
+		spec["credentialRef"] = v
+	}
 	if !m.MaxConcurrentRequests.IsNull() && !m.MaxConcurrentRequests.IsUnknown() {
 		spec["maxConcurrentRequests"] = m.MaxConcurrentRequests.ValueInt64()
 	}
@@ -132,12 +197,17 @@ func (m providerSpecModel) toSpec() map[string]any {
 
 // applyReadback refreshes every server-owned field from a read-back spec while
 // preserving the write-only api_key already in state/plan.
+//
+// `credentialRef` IS refreshed, unlike `api_key`, because the service returns
+// it: it is a pointer, not a secret. That is what makes a hand-switch from the
+// reference form to an inline key visible as drift on the next plan.
 func (m *providerSpecModel) applyReadback(spec map[string]any) {
 	m.Name = types.StringValue(specString(spec, "name"))
 	m.Slug = types.StringValue(specString(spec, "slug"))
 	m.APIType = types.StringValue(specString(spec, "apiType"))
 	m.BaseURL = types.StringValue(specString(spec, "baseUrl"))
 	m.AuthType = strOrNull(specString(spec, "authType"))
+	m.CredentialRef = strOrNull(specString(spec, "credentialRef"))
 
 	if v, ok := numberFromSpec(spec, "maxConcurrentRequests"); ok {
 		m.MaxConcurrentRequests = types.Int64Value(int64(v))
