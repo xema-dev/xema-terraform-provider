@@ -65,10 +65,29 @@ func (r *modelStrategyResource) Metadata(_ context.Context, req resource.Metadat
 }
 
 func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	// ── WHY SO MANY ATTRIBUTES ARE Optional AND Computed ────────────────────
+	//
+	// The XEMA API is authoritative for current state; this provider's state is
+	// a cache of it. Every attribute the service has an opinion about must be
+	// able to come BACK from a read, which is what `Computed` means here.
+	//
+	// `Optional` alone is the trap, and it fails at apply rather than at review:
+	// a declaration that omits `is_default` plans NULL, the create reads back
+	// `false` (the response DTO always carries the field), and Terraform refuses
+	// its own result — "Provider produced inconsistent result after apply". The
+	// same holds for `entries`, where a strategy with no bindings reads back as
+	// an empty set rather than as null.
+	//
+	// It also buys the property that makes state disposable: because every
+	// server-owned value is refreshed from the API on each Read, a lost state
+	// file is recovered by `import` rather than reconstructed by hand, and a
+	// `plan` reports genuine drift rather than the difference between two
+	// caches.
 	resp.Schema = schema.Schema{
 		Description: "A model strategy: which model each model LANE routes to for this organization, " +
 			"plus the default model an unbound lane falls through to. Managed through llm-registry-api " +
-			"via the control plane.",
+			"via the control plane. The API is authoritative: every server-owned value is refreshed " +
+			"from it on each read, so state can be rebuilt by import.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -91,6 +110,7 @@ func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaReque
 			},
 			"description": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "What this strategy is for.",
 			},
 			"tier": schema.StringAttribute{
@@ -110,6 +130,7 @@ func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaReque
 			},
 			"is_default": schema.BoolAttribute{
 				Optional: true,
+				Computed: true,
 				Description: "Make this the organization's DEFAULT STRATEGY — which strategy an " +
 					"invocation uses when a project binds none. A different axis from " +
 					"`default_model_slug`, which is the default MODEL within a strategy.",
@@ -122,14 +143,17 @@ func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaReque
 			},
 			"default_temperature": schema.Float64Attribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Temperature for the default binding (0-2). Omitted = the engine/model owns it.",
 			},
 			"default_reasoning_effort": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Reasoning effort for the default binding. Omitted = the engine/model owns it.",
 			},
 			"entries": schema.SetNestedAttribute{
 				Optional: true,
+				Computed: true,
 				Description: "Lane bindings, at most one per lane. A SET rather than a list: the " +
 					"binding for `coder` and the binding for `planner` have no order between them, " +
 					"and a list would report drift whenever the service returned them in a " +

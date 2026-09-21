@@ -4,8 +4,10 @@
 package provider
 
 import (
+	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -96,5 +98,46 @@ func TestModelStrategyDistinguishesAbsentEntriesFromEmpty(t *testing.T) {
 	}
 	if got := entries.([]any); len(got) != 0 {
 		t.Fatalf("expected an empty entry list, got %#v", got)
+	}
+}
+
+// The API is authoritative for current state. Every attribute the service has
+// an opinion about must be able to come BACK from a read, or the create's own
+// readback contradicts the plan and Terraform refuses its result with
+// "Provider produced inconsistent result after apply".
+//
+// `is_default` and `entries` are the two that FAIL that way rather than merely
+// risking it: the response DTO always carries `isDefault`, and a strategy with
+// no bindings reads back as an empty set rather than as null. Asserted on the
+// schema so the fix cannot be undone by an edit that looks like tidying.
+func TestModelStrategyMarksServerOwnedAttributesComputed(t *testing.T) {
+	var resp resource.SchemaResponse
+	(&modelStrategyResource{}).Schema(context.Background(), resource.SchemaRequest{}, &resp)
+
+	for _, name := range []string{
+		"description", "is_default", "default_temperature",
+		"default_reasoning_effort", "entries",
+	} {
+		attr, ok := resp.Schema.Attributes[name]
+		if !ok {
+			t.Fatalf("attribute %q is missing from the schema", name)
+		}
+		if !attr.IsComputed() {
+			t.Errorf("%q is server-owned and must be Computed, or a create that "+
+				"omits it reads back a value the plan did not contain", name)
+		}
+		if !attr.IsOptional() {
+			t.Errorf("%q must stay Optional — an organization may decline to state it", name)
+		}
+	}
+
+	// The counter-case, so this is a statement about SERVER-OWNED values and not
+	// a blanket "mark everything Computed": `id` is Computed and NOT optional,
+	// and `slug` is the practitioner's to declare.
+	if id := resp.Schema.Attributes["id"]; !id.IsComputed() || id.IsOptional() {
+		t.Errorf("id must be Computed and not Optional")
+	}
+	if slug := resp.Schema.Attributes["slug"]; slug.IsComputed() || !slug.IsRequired() {
+		t.Errorf("slug is declared by the practitioner: Required, never Computed")
 	}
 }
