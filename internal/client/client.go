@@ -12,9 +12,23 @@
 //	PUT    /control-plane/resources/:kind/:id       -> update
 //	DELETE /control-plane/resources/:kind/:id       -> delete
 //
-// Every request carries an org-admin bearer token and the canonical
+// Every org-scoped request carries an org-admin bearer token and the canonical
 // X-Xema-Org-Id tenant header. The control plane derives the authoritative org
-// from the verified token; the header is sent for tenant routing parity.
+// from the verified token; the header is sent for tenant routing parity. For
+// kind `org` the org-scoped surface only reads/updates the caller's own org;
+// create/delete are refused 403 ORG_LIFECYCLE_IS_INSTALLATION_SCOPED.
+//
+// Org lifecycle lives on the installation surface, which needs a
+// platform_admin token. The X-Xema-Org-Id header is still sent (the platform
+// middleware requires it of every user token) but the installation routes
+// ignore it and authorize on platform_admin alone; installation authority never
+// implies org admin, and vice versa:
+//
+//	GET    /control-plane/installation/orgs        -> list
+//	POST   /control-plane/installation/orgs        -> create  (returns a handle)
+//	GET    /control-plane/installation/orgs/:id     -> read
+//	PUT    /control-plane/installation/orgs/:id     -> update
+//	DELETE /control-plane/installation/orgs/:id     -> delete
 package client
 
 import (
@@ -103,6 +117,13 @@ func (c *Client) do(ctx context.Context, method, kind, id string, body any, out 
 	return c.doURL(ctx, method, c.url(kind, id), body, out)
 }
 
+func (c *Client) installationOrgURL(id string) string {
+	if id == "" {
+		return c.endpoint + "/control-plane/installation/orgs"
+	}
+	return fmt.Sprintf("%s/control-plane/installation/orgs/%s", c.endpoint, id)
+}
+
 func (c *Client) doURL(ctx context.Context, method, url string, body any, out any) error {
 	var rdr io.Reader
 	if body != nil {
@@ -187,6 +208,41 @@ func (c *Client) Update(ctx context.Context, kind, id string, spec map[string]an
 // Delete removes a resource by physical id.
 func (c *Client) Delete(ctx context.Context, kind, id string) error {
 	return c.do(ctx, http.MethodDelete, kind, id, nil, nil)
+}
+
+// CreateInstallationOrg creates an org on the installation surface
+// (POST /control-plane/installation/orgs). It needs a platform_admin token; the
+// org header is sent but ignored by the route.
+func (c *Client) CreateInstallationOrg(ctx context.Context, spec map[string]any) (*Handle, error) {
+	var h Handle
+	if err := c.doURL(ctx, http.MethodPost, c.installationOrgURL(""), specBody{Spec: spec}, &h); err != nil {
+		return nil, err
+	}
+	return &h, nil
+}
+
+// ReadInstallationOrg fetches an org by id on the installation surface. A 404
+// surfaces as an APIError with Status 404.
+func (c *Client) ReadInstallationOrg(ctx context.Context, id string) (*Resource, error) {
+	var r Resource
+	if err := c.doURL(ctx, http.MethodGet, c.installationOrgURL(id), nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// UpdateInstallationOrg replaces an org's spec on the installation surface.
+func (c *Client) UpdateInstallationOrg(ctx context.Context, id string, spec map[string]any) (*Resource, error) {
+	var r Resource
+	if err := c.doURL(ctx, http.MethodPut, c.installationOrgURL(id), specBody{Spec: spec}, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// DeleteInstallationOrg deletes an org on the installation surface.
+func (c *Client) DeleteInstallationOrg(ctx context.Context, id string) error {
+	return c.doURL(ctx, http.MethodDelete, c.installationOrgURL(id), nil, nil)
 }
 
 // IsNotFound reports whether err is an APIError with a 404 status.

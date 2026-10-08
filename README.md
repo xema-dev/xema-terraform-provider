@@ -67,8 +67,11 @@ Opaque object/array fields (e.g. `metadata`, `config_json`, `branding`,
 normalized JSON strings — Terraform compares them semantically, so formatting
 or key-order differences never show as drift.
 
-> **`xema_org`** is operator-scoped: creating/deleting an org requires a
-> platform-admin token; an org admin may only read/update their own org.
+> **`xema_org`** (resource) is installation-scoped: creating, updating and
+> deleting an org uses the control-plane installation routes, needs a
+> platform-admin token (the configured `org` is only the request's transport context). Installation authority
+> never implies org admin, and vice versa. An org admin reads their own org via
+> the `xema_org` data source. (The provider `org` attribute is still required.)
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field.
 > **`xema_space`** updates `classification` in place; changing `ref`,
