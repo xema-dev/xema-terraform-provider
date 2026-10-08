@@ -157,3 +157,69 @@ func TestResolveDistributionLockRequiresFleetEndpoint(t *testing.T) {
 		t.Fatal("expected an error when fleet_endpoint is unset")
 	}
 }
+
+func TestInstallationOrgMethodsUseInstallationPaths(t *testing.T) {
+	type call struct{ method, path, org, auth string }
+	var calls []call
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		org := r.Header.Get("X-Xema-Org-Id")
+		calls = append(calls, call{r.Method, r.URL.Path, org, r.Header.Get("Authorization")})
+		switch r.Method {
+		case http.MethodPost:
+			_ = json.NewEncoder(w).Encode(Handle{Kind: "org", PhysicalID: "o-1", ManagedKey: "acme"})
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", "org-123", "tok-pa", srv.Client())
+	ctx := context.Background()
+	if _, err := c.CreateInstallationOrg(ctx, map[string]any{"name": "acme"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ReadInstallationOrg(ctx, "o-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.UpdateInstallationOrg(ctx, "o-1", map[string]any{"name": "acme"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteInstallationOrg(ctx, "o-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []call{
+		{http.MethodPost, "/control-plane/installation/orgs", "org-123", "Bearer tok-pa"},
+		{http.MethodGet, "/control-plane/installation/orgs/o-1", "org-123", "Bearer tok-pa"},
+		{http.MethodPut, "/control-plane/installation/orgs/o-1", "org-123", "Bearer tok-pa"},
+		{http.MethodDelete, "/control-plane/installation/orgs/o-1", "org-123", "Bearer tok-pa"},
+	}
+	if len(calls) != len(want) {
+		t.Fatalf("calls = %v", calls)
+	}
+	for i := range want {
+		if calls[i] != want[i] {
+			t.Errorf("call %d = %+v, want %+v", i, calls[i], want[i])
+		}
+	}
+}
+
+func TestOrgScopedCallsStillSendOrgHeader(t *testing.T) {
+	var gotOrg, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotOrg = r.Header.Get("X-Xema-Org-Id")
+		gotPath = r.URL.Path
+		_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "", "org-123", "tok", srv.Client())
+	if _, err := c.Read(context.Background(), "org", "o-1"); err != nil {
+		t.Fatal(err)
+	}
+	if gotOrg != "org-123" || gotPath != "/control-plane/resources/org/o-1" {
+		t.Errorf("org=%q path=%q", gotOrg, gotPath)
+	}
+}

@@ -33,7 +33,8 @@ func (d *orgDataSource) Metadata(_ context.Context, req datasource.MetadataReque
 
 func (d *orgDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Look up an existing Xema organization by its physical id.",
+		Description: "Look up the caller's own Xema organization by its physical id (org-scoped, read-only). " +
+			"Org lifecycle is managed by the `xema_org` resource on the installation surface.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:    true,

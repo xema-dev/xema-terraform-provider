@@ -87,7 +87,8 @@ resource "xema_role" "kb_editor" {
   description  = "Can edit knowledge-base deliverables."
 }
 
-# An organization. Create/delete requires a platform-admin (operator) token.
+# An organization. Create/update/delete is an installation operation and
+# requires a platform-admin token (org admins read their own org via the data source).
 resource "xema_org" "acme" {
   name         = "acme-corp"
   display_name = "Acme Corporation"

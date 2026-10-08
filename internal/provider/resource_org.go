@@ -51,8 +51,10 @@ func (r *orgResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 func (r *orgResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "A Xema organization (tenant), managed through identity-api via the control plane. " +
-			"Creating or deleting an org requires a platform-admin (operator) token; an org admin may only " +
-			"read/update their own org.",
+			"Creating, updating and deleting an org is an installation operation: it uses the control-plane " +
+			"installation surface and needs a platform-admin token; the configured `org` is only the request's " +
+			"transport context. Installation authority does not imply org admin, and vice versa. An org admin reads their own org with the " +
+			"`xema_org` data source.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -123,14 +125,14 @@ func (r *orgResource) Create(ctx context.Context, req resource.CreateRequest, re
 		resp.Diagnostics.AddError("Invalid metadata", err.Error())
 		return
 	}
-	handle, err := r.client.Create(ctx, orgKind, spec)
+	handle, err := r.client.CreateInstallationOrg(ctx, spec)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create organization", err.Error())
 		return
 	}
 	plan.ID = types.StringValue(handle.PhysicalID)
 
-	res, err := r.client.Read(ctx, orgKind, handle.PhysicalID)
+	res, err := r.client.ReadInstallationOrg(ctx, handle.PhysicalID)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read organization after create", err.Error())
 		return
@@ -146,7 +148,7 @@ func (r *orgResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 		return
 	}
 
-	res, err := r.client.Read(ctx, orgKind, state.ID.ValueString())
+	res, err := r.client.ReadInstallationOrg(ctx, state.ID.ValueString())
 	if err != nil {
 		if client.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -171,7 +173,7 @@ func (r *orgResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		resp.Diagnostics.AddError("Invalid metadata", err.Error())
 		return
 	}
-	res, err := r.client.Update(ctx, orgKind, plan.ID.ValueString(), spec)
+	res, err := r.client.UpdateInstallationOrg(ctx, plan.ID.ValueString(), spec)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update organization", err.Error())
 		return
@@ -186,7 +188,7 @@ func (r *orgResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.Delete(ctx, orgKind, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
+	if err := r.client.DeleteInstallationOrg(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Failed to delete organization", err.Error())
 	}
 }
