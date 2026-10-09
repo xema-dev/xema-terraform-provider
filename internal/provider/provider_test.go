@@ -33,9 +33,18 @@ func TestProviderSchemaAttributes(t *testing.T) {
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("unexpected schema diagnostics: %v", resp.Diagnostics)
 	}
-	for _, attr := range []string{"endpoint", "org", "token"} {
+	// The set is exact, not a minimum. The provider binds to ONE endpoint, the
+	// control plane; an attribute beyond these three is a second plane the
+	// provider would have to authenticate against and answer for.
+	want := map[string]bool{"endpoint": true, "org": true, "token": true}
+	for attr := range want {
 		if _, ok := resp.Schema.Attributes[attr]; !ok {
 			t.Errorf("provider schema missing attribute %q", attr)
+		}
+	}
+	for attr := range resp.Schema.Attributes {
+		if !want[attr] {
+			t.Errorf("provider schema carries unexpected attribute %q", attr)
 		}
 	}
 }
@@ -105,8 +114,47 @@ func TestResourceSchemasValid(t *testing.T) {
 		}
 	}
 
-	if got := len(xp.DataSources(context.Background())); got != 17 {
-		t.Fatalf("expected 17 data sources, got %d", got)
+	if got := len(xp.DataSources(context.Background())); got != 16 {
+		t.Fatalf("expected 16 data sources, got %d", got)
+	}
+}
+
+// TestEveryDataSourceReadsAManagedKind pins the data sources to the resource
+// kinds, one for one: a data source is the read-by-id view of a kind the
+// control plane manages, and nothing else.
+//
+// It exists because the provider once carried `xema_distribution_lock`, which
+// read no managed kind. It posted a distribution to fleet-control's resolver
+// and published the answer as a `lock`. That answer is an unsealed preview: no
+// deployment admits it, and only the sealed lock `xema edition seal` produces
+// is a lock. A data source that names a preview a lock hands Terraform a value
+// that looks admissible wherever a lock is required, so the provider publishes
+// neither. A new data source without a resource of the same name fails here.
+func TestEveryDataSourceReadsAManagedKind(t *testing.T) {
+	xp, ok := New("test")().(*xemaProvider)
+	if !ok {
+		t.Fatal("New did not return *xemaProvider")
+	}
+
+	kinds := map[string]bool{}
+	for _, factory := range xp.Resources(context.Background()) {
+		var meta resource.MetadataResponse
+		factory().Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "xema"}, &meta)
+		kinds[meta.TypeName] = false
+	}
+	for _, factory := range xp.DataSources(context.Background()) {
+		var meta datasource.MetadataResponse
+		factory().Metadata(context.Background(), datasource.MetadataRequest{ProviderTypeName: "xema"}, &meta)
+		if _, ok := kinds[meta.TypeName]; !ok {
+			t.Errorf("data source %q reads no managed resource kind", meta.TypeName)
+			continue
+		}
+		kinds[meta.TypeName] = true
+	}
+	for name, seen := range kinds {
+		if !seen {
+			t.Errorf("resource %q has no matching data source", name)
+		}
 	}
 }
 

@@ -79,23 +79,10 @@ Every kind also has a matching **data source** (`data.xema_<kind>`) for
 read-by-id lookups: the `id` is the only input and every spec field is exposed
 as a computed attribute.
 
-### `data.xema_distribution_lock` (operator plane)
+### Distribution locks are not a provider concern
 
-Resolves a Distribution and an available-biome index into a `DistributionLock`
-through fleet-control-api. It has no side effects, so it is a data source. It
-needs the provider's `fleet_endpoint` (or `XEMA_FLEET_ENDPOINT`) and a service
-token, not a plain org-admin token.
-
-All four inputs are required; fewer is a `422`.
-
-| Input | What it is |
-|---|---|
-| `distribution` | the `Distribution` to resolve (`schemaVersion`, `id`, `include[]`, ...) |
-| `available_biomes` | the biome index to resolve against, as an array of `AvailableBiome` objects |
-| `capability_domain_owners` | the platform-reserved `{domain, biomeId}` table, non-empty |
-| `platform_service_sources` | exact `{name, tier, repo, commit, version, sourceManifestHash}` per declared platform service |
-
-The output `lock` is the resolved `DistributionLock` (schema version 2).
+The provider publishes no distribution lock.
+A lock is the sealed artifact `xema edition seal` produces.
 
 ## Development
 
