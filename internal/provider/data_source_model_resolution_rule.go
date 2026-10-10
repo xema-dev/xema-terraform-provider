@@ -41,7 +41,7 @@ func (d *modelResolutionRuleDataSource) Schema(_ context.Context, _ datasource.S
 			},
 			"selector": schema.SingleNestedAttribute{
 				Computed:    true,
-				Description: "Dimensional selector. An empty/absent selector is the DEFAULT rule (set is_default).",
+				Description: "Dimensional selector (at least one dimension).",
 				Attributes: map[string]schema.Attribute{
 					"agent":      schema.StringAttribute{Computed: true, Description: "Match on agent slug."},
 					"skill":      schema.StringAttribute{Computed: true, Description: "Match on skill slug."},
@@ -56,33 +56,25 @@ func (d *modelResolutionRuleDataSource) Schema(_ context.Context, _ datasource.S
 					},
 				},
 			},
-			"target_kind": schema.StringAttribute{
+			"strategy_id": schema.StringAttribute{
 				Computed:    true,
-				Description: "How the rule resolves a model (the ModelResolutionTargetKind).",
+				Description: "The model strategy that owns this rule; null for an org-level rule.",
 			},
 			"target_model_id": schema.StringAttribute{
 				Computed:    true,
-				Description: "Resolve to a specific model id.",
-			},
-			"target_provider_slug": schema.StringAttribute{
-				Computed:    true,
-				Description: "Resolve within a specific provider slug.",
-			},
-			"target_model_lane": schema.StringAttribute{
-				Computed:    true,
-				Description: modelLaneTargetDescription,
+				Description: "Registry model record id (`LlmModel.id`) the rule routes to.",
 			},
 			"target_temperature": schema.Float64Attribute{
 				Computed:    true,
-				Description: "Sampling temperature applied at resolution.",
+				Description: "Sampling temperature carried by the resolved model.",
+			},
+			"target_reasoning_effort": schema.StringAttribute{
+				Computed:    true,
+				Description: "Reasoning effort carried by the resolved model.",
 			},
 			"priority": schema.Int64Attribute{
 				Computed:    true,
 				Description: "Tie-breaker priority when two rules match the same number of dimensions.",
-			},
-			"is_default": schema.BoolAttribute{
-				Computed:    true,
-				Description: "Whether this is the org DEFAULT rule (empty selector).",
 			},
 		},
 	}

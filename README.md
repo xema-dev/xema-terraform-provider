@@ -91,6 +91,7 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_model`                    | `model`                 | llm-registry-api      |
 | `xema_model_strategy`           | `model-strategy`        | llm-registry-api      |
 | `xema_model_resolution_rule`    | `model-resolution-rule` | llm-registry-api      |
+| `xema_org_model_default`        | `org-model-default`     | llm-registry-api      |
 | `xema_agent`                    | `agent`                 | llm-registry-api      |
 | `xema_skill`                    | `skill`                 | skill-registry-api    |
 | `xema_role`                     | `role`                  | authorization-api     |

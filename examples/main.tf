@@ -32,52 +32,55 @@ resource "xema_provider" "openai" {
   api_key  = var.xema_token # use a dedicated secret in real usage
 }
 
-# Which model plays each LANE for this organization. `default_model_slug` is the
-# one systemic fallback: a lane with no entry of its own routes to it, so no lane
-# key is reserved and none is mandatory.
-resource "xema_model_strategy" "house" {
-  slug               = "house"
-  display_name       = "House strategy"
-  tier               = "balanced"
-  provider_focus     = "mixed"
-  is_default         = true
-  default_model_slug = "gpt-4o-mini"
-
-  entries = [
-    { model_lane = "general-purpose", model_slug = "gpt-4o" },
-    { model_lane = "coder", model_slug = "gpt-4o", reasoning_effort = "high" },
-  ]
+resource "xema_model" "gpt4o" {
+  provider_id    = xema_provider.openai.id
+  model_id       = "gpt-4o"
+  display_name   = "GPT-4o"
+  context_window = 128000
 }
 
-# A rule may target the STRATEGY rather than a concrete model, in which case the
-# lane decides which model runs.
+resource "xema_model" "gpt4o_mini" {
+  provider_id    = xema_provider.openai.id
+  model_id       = "gpt-4o-mini"
+  display_name   = "GPT-4o mini"
+  context_window = 128000
+}
+
+# A model strategy is a named container of rules; it holds nothing else. Bind it
+# to a project and its rules apply to that project.
+resource "xema_model_strategy" "house" {
+  slug         = "house"
+  display_name = "House strategy"
+}
+
+# A rule owned by the strategy. `target_model_id` is the registry model record id
+# (LlmModel.id). A selector needs at least one dimension; here the lane decides.
 resource "xema_model_resolution_rule" "by_lane" {
-  target_kind       = "strategy"
-  target_model_lane = "coder"
-  priority          = 20
+  strategy_id             = xema_model_strategy.house.id
+  target_model_id         = xema_model.gpt4o.id
+  target_reasoning_effort = "high"
+  priority                = 20
 
   selector = {
     model_lane = "coder"
   }
 }
 
-# Default rule (empty selector) resolving to a specific model.
-resource "xema_model_resolution_rule" "default" {
-  target_kind     = "model"
-  target_model_id = "gpt-4o"
-  is_default      = true
-}
-
-# A dimensional rule: most-specific match wins.
+# An org-level rule (no strategy): most-specific match wins.
 resource "xema_model_resolution_rule" "by_project" {
-  target_kind     = "model"
-  target_model_id = "gpt-4o-mini"
+  target_model_id = xema_model.gpt4o_mini.id
   priority        = 10
 
   selector = {
     project = xema_project.demo.id
     stage   = "review"
   }
+}
+
+# The organization default model: used when nothing more specific applies.
+# Never substituted; unset, an unresolved invocation fails MODEL_NOT_CONFIGURED.
+resource "xema_org_model_default" "this" {
+  model_id = xema_model.gpt4o_mini.id
 }
 
 # A custom org role (permission set).

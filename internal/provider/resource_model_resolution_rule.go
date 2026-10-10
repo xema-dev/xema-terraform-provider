@@ -20,12 +20,12 @@ import (
 // Resolution Matrix rules.
 const modelResolutionRuleKind = "model-resolution-rule"
 
-// The model-lane attribute descriptions, declared ONCE because the resource and
+// The model-lane attribute description, declared ONCE because the resource and
 // the data source must describe the same wire field and the data source reuses
 // this file's mrrModel — two copies could drift into describing one field two
 // ways.
 //
-// They deliberately name NO lane as a platform value. The closed
+// It deliberately names NO lane as a platform value. The closed
 // `ModelClass` enum these attributes were built against is deleted: every lane
 // is now declared by a `model-lane` contribution, so the admissible set is a
 // property of what an organisation has installed and the only honest answer is
@@ -38,10 +38,6 @@ const (
 		"declared by a `model-lane` contribution, and `GET /work-kinds?kind=model-lane` enumerates the lanes " +
 		"this organisation may use (the `agent-runtime` biome contributes `general-purpose`, `coder`, " +
 		"`planner` and `light`). An undeclared lane is refused when the rule is written, not at resolve time."
-
-	modelLaneTargetDescription = "Model lane this rule routes through. Required when `target_kind` is `strategy`. " +
-		"OPEN vocabulary declared by `model-lane` contributions — see `GET /work-kinds?kind=model-lane` for the " +
-		"lanes this organisation may use."
 )
 
 var (
@@ -74,15 +70,13 @@ type selectorModel struct {
 
 // mrrModel mirrors the model-resolution-rule kind spec.
 type mrrModel struct {
-	ID                 types.String   `tfsdk:"id"`
-	Selector           *selectorModel `tfsdk:"selector"`
-	TargetKind         types.String   `tfsdk:"target_kind"`
-	TargetModelID      types.String   `tfsdk:"target_model_id"`
-	TargetProviderSlug types.String   `tfsdk:"target_provider_slug"`
-	TargetModelLane    types.String   `tfsdk:"target_model_lane"`
-	TargetTemperature  types.Float64  `tfsdk:"target_temperature"`
-	Priority           types.Int64    `tfsdk:"priority"`
-	IsDefault          types.Bool     `tfsdk:"is_default"`
+	ID                    types.String   `tfsdk:"id"`
+	Selector              *selectorModel `tfsdk:"selector"`
+	StrategyID            types.String   `tfsdk:"strategy_id"`
+	TargetModelID         types.String   `tfsdk:"target_model_id"`
+	TargetTemperature     types.Float64  `tfsdk:"target_temperature"`
+	TargetReasoningEffort types.String   `tfsdk:"target_reasoning_effort"`
+	Priority              types.Int64    `tfsdk:"priority"`
 }
 
 func (r *modelResolutionRuleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -92,7 +86,8 @@ func (r *modelResolutionRuleResource) Metadata(_ context.Context, req resource.M
 func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "A Model Resolution Matrix rule, managed through llm-registry-api via the control plane. " +
-			"Among matching rules the one matching the most selector dimensions wins; ties break by priority.",
+			"Among matching rules the one matching the most selector dimensions wins; ties break by priority, " +
+			"then a strategy rule over an org-level rule, then the lower id.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -101,9 +96,17 @@ func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.Schem
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"strategy_id": schema.StringAttribute{
+				Optional: true,
+				Description: "The model strategy that owns this rule; omit for an org-level rule. A strategy's " +
+					"rules apply to the projects the strategy is bound to. Immutable: changing it replaces the rule.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 			"selector": schema.SingleNestedAttribute{
-				Optional:    true,
-				Description: "Dimensional selector. An empty/absent selector is the DEFAULT rule (set is_default).",
+				Required:    true,
+				Description: "Dimensional selector. At least one dimension is required: an empty selector is refused. The organization default model is `xema_org_model_default`.",
 				Attributes: map[string]schema.Attribute{
 					"agent":      schema.StringAttribute{Optional: true, Description: "Match on agent slug."},
 					"skill":      schema.StringAttribute{Optional: true, Description: "Match on skill slug."},
@@ -118,35 +121,24 @@ func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.Schem
 					},
 				},
 			},
-			"target_kind": schema.StringAttribute{
-				Required:    true,
-				Description: "How the rule resolves a model (the ModelResolutionTargetKind).",
-			},
 			"target_model_id": schema.StringAttribute{
-				Optional:    true,
-				Description: "Resolve to a specific model id.",
-			},
-			"target_provider_slug": schema.StringAttribute{
-				Optional:    true,
-				Description: "Resolve within a specific provider slug.",
-			},
-			"target_model_lane": schema.StringAttribute{
-				Optional:    true,
-				Description: modelLaneTargetDescription,
+				Required: true,
+				Description: "Registry model record id (`LlmModel.id`) the rule routes to. It must be an active " +
+					"model on an active provider the organization or the platform owns; otherwise the write is refused.",
 			},
 			"target_temperature": schema.Float64Attribute{
 				Optional:    true,
-				Description: "Sampling temperature applied at resolution.",
+				Description: "Sampling temperature (0-2) carried by the resolved model.",
+			},
+			"target_reasoning_effort": schema.StringAttribute{
+				Optional: true,
+				Description: "Reasoning effort carried by the resolved model, forwarded verbatim to the provider. " +
+					"OPEN vocabulary owned by the provider.",
 			},
 			"priority": schema.Int64Attribute{
 				Optional:    true,
 				Computed:    true,
 				Description: "Tie-breaker priority when two rules match the same number of dimensions.",
-			},
-			"is_default": schema.BoolAttribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "Whether this is the org DEFAULT rule (empty selector).",
 			},
 		},
 	}
@@ -157,7 +149,7 @@ func (r *modelResolutionRuleResource) Configure(_ context.Context, req resource.
 }
 
 func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {
-	spec := map[string]any{"targetKind": m.TargetKind.ValueString()}
+	spec := map[string]any{"targetModelId": m.TargetModelID.ValueString()}
 
 	if m.Selector != nil {
 		sel := map[string]any{}
@@ -191,14 +183,11 @@ func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {
 		spec["selector"] = sel
 	}
 
-	if v := optString(m.TargetModelID); v != "" {
-		spec["targetModelId"] = v
+	if v := optString(m.StrategyID); v != "" {
+		spec["strategyId"] = v
 	}
-	if v := optString(m.TargetProviderSlug); v != "" {
-		spec["targetProviderSlug"] = v
-	}
-	if v := optString(m.TargetModelLane); v != "" {
-		spec["targetModelLane"] = v
+	if v := optString(m.TargetReasoningEffort); v != "" {
+		spec["targetReasoningEffort"] = v
 	}
 	if !m.TargetTemperature.IsNull() && !m.TargetTemperature.IsUnknown() {
 		spec["targetTemperature"] = m.TargetTemperature.ValueFloat64()
@@ -206,17 +195,13 @@ func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {
 	if !m.Priority.IsNull() && !m.Priority.IsUnknown() {
 		spec["priority"] = m.Priority.ValueInt64()
 	}
-	if !m.IsDefault.IsNull() && !m.IsDefault.IsUnknown() {
-		spec["isDefault"] = m.IsDefault.ValueBool()
-	}
 	return spec, nil
 }
 
 func (m *mrrModel) applyReadback(ctx context.Context, spec map[string]any) error {
-	m.TargetKind = types.StringValue(specString(spec, "targetKind"))
-	m.TargetModelID = strOrNull(specString(spec, "targetModelId"))
-	m.TargetProviderSlug = strOrNull(specString(spec, "targetProviderSlug"))
-	m.TargetModelLane = strOrNull(specString(spec, "targetModelLane"))
+	m.StrategyID = strOrNull(specString(spec, "strategyId"))
+	m.TargetModelID = types.StringValue(specString(spec, "targetModelId"))
+	m.TargetReasoningEffort = strOrNull(specString(spec, "targetReasoningEffort"))
 
 	if v, ok := numberFromSpec(spec, "targetTemperature"); ok {
 		m.TargetTemperature = types.Float64Value(v)
@@ -227,11 +212,6 @@ func (m *mrrModel) applyReadback(ctx context.Context, spec map[string]any) error
 		m.Priority = types.Int64Value(int64(v))
 	} else {
 		m.Priority = types.Int64Null()
-	}
-	if v, ok := spec["isDefault"].(bool); ok {
-		m.IsDefault = types.BoolValue(v)
-	} else {
-		m.IsDefault = types.BoolNull()
 	}
 
 	if rawSel, ok := spec["selector"].(map[string]any); ok && len(rawSel) > 0 {

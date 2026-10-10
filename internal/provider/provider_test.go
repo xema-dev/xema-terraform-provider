@@ -56,8 +56,8 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	}
 
 	resources := xp.Resources(context.Background())
-	if got := len(resources); got != 16 {
-		t.Fatalf("expected 16 resources, got %d", got)
+	if got := len(resources); got != 17 {
+		t.Fatalf("expected 17 resources, got %d", got)
 	}
 
 	wantResources := map[string]bool{
@@ -65,6 +65,7 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 		"xema_provider":              false,
 		"xema_model_resolution_rule": false,
 		"xema_model_strategy":        false,
+		"xema_org_model_default":     false,
 		"xema_role":                  false,
 		"xema_org":                   false,
 		"xema_deliverable_spec":      false,
@@ -114,8 +115,8 @@ func TestResourceSchemasValid(t *testing.T) {
 		}
 	}
 
-	if got := len(xp.DataSources(context.Background())); got != 16 {
-		t.Fatalf("expected 16 data sources, got %d", got)
+	if got := len(xp.DataSources(context.Background())); got != 17 {
+		t.Fatalf("expected 17 data sources, got %d", got)
 	}
 }
 

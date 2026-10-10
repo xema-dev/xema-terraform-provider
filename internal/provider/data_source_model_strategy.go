@@ -32,8 +32,7 @@ func (d *modelStrategyDataSource) Metadata(_ context.Context, req datasource.Met
 
 func (d *modelStrategyDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Look up an existing model strategy by its physical id — its lane bindings and " +
-			"the default model an unbound lane falls through to.",
+		Description: "Look up an existing model strategy (a named container of rules) by its physical id.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:    true,
@@ -50,54 +49,6 @@ func (d *modelStrategyDataSource) Schema(_ context.Context, _ datasource.SchemaR
 			"description": schema.StringAttribute{
 				Computed:    true,
 				Description: "What this strategy is for.",
-			},
-			"tier": schema.StringAttribute{
-				Computed:    true,
-				Description: "Capacity tier.",
-			},
-			"provider_focus": schema.StringAttribute{
-				Computed:    true,
-				Description: "Provider focus.",
-			},
-			"is_default": schema.BoolAttribute{
-				Computed:    true,
-				Description: "Whether this is the organization's default strategy.",
-			},
-			"default_model_slug": schema.StringAttribute{
-				Computed:    true,
-				Description: "The model an unbound lane routes to.",
-			},
-			"default_temperature": schema.Float64Attribute{
-				Computed:    true,
-				Description: "Temperature for the default binding.",
-			},
-			"default_reasoning_effort": schema.StringAttribute{
-				Computed:    true,
-				Description: "Reasoning effort for the default binding.",
-			},
-			"entries": schema.SetNestedAttribute{
-				Computed:    true,
-				Description: "Lane bindings, at most one per lane.",
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"model_lane": schema.StringAttribute{
-							Computed:    true,
-							Description: "The model lane this entry routes.",
-						},
-						"model_slug": schema.StringAttribute{
-							Computed:    true,
-							Description: "Model slug the lane routes to.",
-						},
-						"temperature": schema.Float64Attribute{
-							Computed:    true,
-							Description: "Temperature for this entry.",
-						},
-						"reasoning_effort": schema.StringAttribute{
-							Computed:    true,
-							Description: "Reasoning effort for this entry.",
-						},
-					},
-				},
 			},
 		},
 	}

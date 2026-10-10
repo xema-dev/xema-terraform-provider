@@ -13,127 +13,60 @@ import (
 
 // The spec a strategy declares and the spec the control plane reads back must be
 // the SAME shape, or every `plan` over an unchanged declaration reports drift.
-// This is the one part of the resource that is pure and the one most likely to
-// be wrong, so it is asserted directly rather than through a live apply.
 func TestModelStrategyRoundTripsItsSpec(t *testing.T) {
 	declared := modelStrategyModel{
-		Slug:               types.StringValue("acme-default"),
-		DisplayName:        types.StringValue("Acme default"),
-		Description:        types.StringValue("Editorial workloads"),
-		Tier:               types.StringValue("balanced"),
-		ProviderFocus:      types.StringValue("mixed"),
-		IsDefault:          types.BoolValue(true),
-		DefaultModelSlug:   types.StringValue("model-a"),
-		DefaultTemperature: types.Float64Value(0.2),
-		Entries: []strategyEntryModel{
-			// Deliberately NOT in sorted order: the readback sorts, and a test
-			// that fed it sorted input could not tell a working sort from none.
-			{ModelLane: types.StringValue("planner"), ModelSlug: types.StringValue("model-b")},
-			{ModelLane: types.StringValue("coder"), ModelSlug: types.StringValue("model-c"),
-				ReasoningEffort: types.StringValue("high")},
-		},
+		Slug:        types.StringValue("house"),
+		DisplayName: types.StringValue("House strategy"),
+		Description: types.StringValue("Editorial workloads"),
 	}
 
 	spec := declared.toSpec()
-
-	if spec["slug"] != "acme-default" || spec["defaultModelSlug"] != "model-a" {
+	if spec["slug"] != "house" || spec["displayName"] != "House strategy" || spec["description"] != "Editorial workloads" {
 		t.Fatalf("strategy fields did not reach the spec: %#v", spec)
 	}
-	if spec["isDefault"] != true {
-		t.Fatalf("isDefault did not reach the spec: %#v", spec["isDefault"])
-	}
-	entries, ok := spec["entries"].([]any)
-	if !ok || len(entries) != 2 {
-		t.Fatalf("expected 2 entries in the spec, got %#v", spec["entries"])
+	if len(spec) != 3 {
+		t.Fatalf("a strategy is a named container; the spec carries only slug, displayName, description: %#v", spec)
 	}
 
 	var readback modelStrategyModel
 	readback.applyReadback(spec)
-
-	if readback.Slug.ValueString() != "acme-default" {
-		t.Fatalf("slug did not round-trip: %q", readback.Slug.ValueString())
+	if readback.Slug.ValueString() != "house" || readback.DisplayName.ValueString() != "House strategy" {
+		t.Fatalf("fields did not round-trip: %#v", readback)
 	}
-	if readback.DefaultTemperature.ValueFloat64() != 0.2 {
-		t.Fatalf("defaultTemperature did not round-trip: %v", readback.DefaultTemperature)
-	}
-	if !readback.IsDefault.ValueBool() {
-		t.Fatalf("isDefault did not round-trip")
-	}
-	if len(readback.Entries) != 2 {
-		t.Fatalf("expected 2 entries after readback, got %d", len(readback.Entries))
-	}
-	if readback.Entries[0].ModelLane.ValueString() != "coder" {
-		t.Fatalf("entries were not sorted by lane: %q first", readback.Entries[0].ModelLane.ValueString())
-	}
-	if readback.Entries[0].ReasoningEffort.ValueString() != "high" {
-		t.Fatalf("reasoningEffort did not round-trip: %v", readback.Entries[0].ReasoningEffort)
-	}
-	// An entry that set no temperature must come back NULL, not 0. Zero is a
-	// legal temperature, so a lossy mapping here would silently pin every
-	// unspecified lane to fully deterministic sampling.
-	if !readback.Entries[0].Temperature.IsNull() {
-		t.Fatalf("absent temperature became %v, not null", readback.Entries[0].Temperature)
+	if readback.Description.ValueString() != "Editorial workloads" {
+		t.Fatalf("description did not round-trip: %v", readback.Description)
 	}
 }
 
-// An absent `entries` block and an empty one are different declarations: the
-// upstream write is a whole-set REPLACE, so emitting `[]` for an absent block
-// would strip every lane binding from a declaration that simply did not mention
-// them.
-func TestModelStrategyDistinguishesAbsentEntriesFromEmpty(t *testing.T) {
-	absent := modelStrategyModel{
-		Slug: types.StringValue("s"), DisplayName: types.StringValue("S"),
-		Tier: types.StringValue("balanced"), ProviderFocus: types.StringValue("mixed"),
-		DefaultModelSlug: types.StringValue("m"),
-	}
-	if _, present := absent.toSpec()["entries"]; present {
-		t.Fatalf("an absent entries block must not reach the spec at all")
-	}
-
-	empty := absent
-	empty.Entries = []strategyEntryModel{}
-	entries, present := empty.toSpec()["entries"]
-	if !present {
-		t.Fatalf("an explicitly empty entries block must reach the spec")
-	}
-	if got := entries.([]any); len(got) != 0 {
-		t.Fatalf("expected an empty entry list, got %#v", got)
+// A strategy that states no description reads back NULL, not an empty string.
+func TestModelStrategyAbsentDescriptionReadsBackNull(t *testing.T) {
+	var readback modelStrategyModel
+	readback.applyReadback(map[string]any{"slug": "s", "displayName": "S"})
+	if !readback.Description.IsNull() {
+		t.Fatalf("absent description became %v, not null", readback.Description)
 	}
 }
 
-// The API is authoritative for current state. Every attribute the service has
-// an opinion about must be able to come BACK from a read, or the create's own
-// readback contradicts the plan and Terraform refuses its result with
-// "Provider produced inconsistent result after apply".
-//
-// `is_default` and `entries` are the two that FAIL that way rather than merely
-// risking it: the response DTO always carries `isDefault`, and a strategy with
-// no bindings reads back as an empty set rather than as null. Asserted on the
-// schema so the fix cannot be undone by an edit that looks like tidying.
-func TestModelStrategyMarksServerOwnedAttributesComputed(t *testing.T) {
+// The schema is a named container: no entries block, no catalogue fields, no
+// is_default. `description` is server-owned (Optional + Computed) so a create
+// that omits it does not read back a value the plan did not contain.
+func TestModelStrategySchemaIsANamedContainer(t *testing.T) {
 	var resp resource.SchemaResponse
 	(&modelStrategyResource{}).Schema(context.Background(), resource.SchemaRequest{}, &resp)
 
-	for _, name := range []string{
-		"description", "is_default", "default_temperature",
-		"default_reasoning_effort", "entries",
+	for _, gone := range []string{
+		"entries", "is_default", "tier", "provider_focus",
+		"default_model_slug", "default_temperature", "default_reasoning_effort",
 	} {
-		attr, ok := resp.Schema.Attributes[name]
-		if !ok {
-			t.Fatalf("attribute %q is missing from the schema", name)
-		}
-		if !attr.IsComputed() {
-			t.Errorf("%q is server-owned and must be Computed, or a create that "+
-				"omits it reads back a value the plan did not contain", name)
-		}
-		if !attr.IsOptional() {
-			t.Errorf("%q must stay Optional — an organization may decline to state it", name)
+		if _, ok := resp.Schema.Attributes[gone]; ok {
+			t.Errorf("attribute %q was removed upstream and must not be in the schema", gone)
 		}
 	}
 
-	// The counter-case, so this is a statement about SERVER-OWNED values and not
-	// a blanket "mark everything Computed": `id` is Computed and NOT optional,
-	// and `slug` is the practitioner's to declare.
+	desc, ok := resp.Schema.Attributes["description"]
+	if !ok || !desc.IsComputed() || !desc.IsOptional() {
+		t.Errorf("description must be Optional and Computed")
+	}
 	if id := resp.Schema.Attributes["id"]; !id.IsComputed() || id.IsOptional() {
 		t.Errorf("id must be Computed and not Optional")
 	}
