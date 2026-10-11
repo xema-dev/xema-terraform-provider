@@ -144,6 +144,10 @@ so goreleaser's usual GPG signature of `SHA256SUMS` is left out. Integrity is
 the committed `.terraform.lock.hcl`, whose hashes Terraform checks on every
 `init`. There is exactly one install mechanism: a filesystem mirror.
 
+`SHA256SUMS` is published next to the zips, so it guards transport only, not
+the origin. The trust anchor is the first `terraform providers lock` (step 3),
+reviewed when the lock file is committed.
+
 1. Download the release zips and `SHA256SUMS`, verify them once with
    `sha256sum -c`, and lay them out as a mirror, using the committed script
    (it also writes the CLI config in step 2):

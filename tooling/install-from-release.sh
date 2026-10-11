@@ -38,7 +38,14 @@ for p in $platforms; do
   f="terraform-provider-xema_${ver}_${p}.zip"
   curl -fsSL -o "$work/$f" "$base/$f"
 done
-( cd "$work" && grep -E "_(${platforms// /|})\.zip\$" "$sums" | "${sumcheck[@]}" )
+want=$(wc -w <<<"$platforms" | tr -d " ")
+lines="$(cd "$work" && grep -E "_(${platforms// /|})\.zip\$" "$sums" || true)"
+got=$(grep -c . <<<"$lines" || true)
+if [ "$got" -ne "$want" ]; then
+  echo "error: $sums lists $got of the $want expected platform zips ($platforms); refusing to install" >&2
+  exit 1
+fi
+( cd "$work" && "${sumcheck[@]}" <<<"$lines" )
 
 mkdir -p "$dest"
 for p in $platforms; do
