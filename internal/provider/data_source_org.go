@@ -62,16 +62,7 @@ func (d *orgDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, re
 }
 
 func (d *orgDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data",
-			"Expected *client.Client. This is a bug in the provider; please report it.")
-		return
-	}
-	d.client = c
+	d.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (d *orgDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

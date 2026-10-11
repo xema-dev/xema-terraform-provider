@@ -104,16 +104,7 @@ func (d *modelStrategyDataSource) Schema(_ context.Context, _ datasource.SchemaR
 }
 
 func (d *modelStrategyDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected provider data",
-			"Expected *client.Client. This is a bug in the provider; please report it.")
-		return
-	}
-	d.client = c
+	d.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (d *modelStrategyDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

@@ -44,12 +44,17 @@ import (
 // orgHeader is the canonical Xema tenant-routing header.
 const orgHeader = "X-Xema-Org-Id"
 
-// Client talks to a single control-plane-api endpoint for a single org.
+// Client talks to a single control-plane-api endpoint, for a single org or, with
+// no org, as an operator limited to installation routes.
 type Client struct {
 	endpoint string
 	org      string
 	token    string
 	http     *http.Client
+	// orgPending marks a client built while the provider's org is still an
+	// unknown value (plan time, org fed from another resource). It can be handed
+	// to resources so they plan, but it never issues a request.
+	orgPending bool
 }
 
 // New constructs a Client. endpoint is the control-plane base URL (any trailing
@@ -64,6 +69,20 @@ func New(endpoint, org, token string, httpClient *http.Client) *Client {
 		token:    token,
 		http:     httpClient,
 	}
+}
+
+// NewOrgPending constructs a Client for a plan in which the provider's org is
+// not yet known. Every request on it fails: the org is never guessed.
+func NewOrgPending(endpoint, token string, httpClient *http.Client) *Client {
+	c := New(endpoint, "", token, httpClient)
+	c.orgPending = true
+	return c
+}
+
+// HasOrg reports whether the client is bound to an org. A client without one
+// runs in operator mode and may only call installation-scoped routes.
+func (c *Client) HasOrg() bool {
+	return c.org != "" || c.orgPending
 }
 
 // Handle is the create-time response: the service-minted physical id plus the
@@ -118,6 +137,9 @@ func (c *Client) installationOrgURL(id string) string {
 }
 
 func (c *Client) doURL(ctx context.Context, method, url string, body any, out any) error {
+	if c.orgPending {
+		return fmt.Errorf("the provider org is not known yet; it cannot be used before apply")
+	}
 	var rdr io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
@@ -132,7 +154,9 @@ func (c *Client) doURL(ctx context.Context, method, url string, body any, out an
 		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set(orgHeader, c.org)
+	if c.org != "" {
+		req.Header.Set(orgHeader, c.org)
+	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

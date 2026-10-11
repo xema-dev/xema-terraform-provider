@@ -76,7 +76,7 @@ func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 }
 
 func (r *roleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m roleModel) toSpec() map[string]any {

@@ -104,7 +104,7 @@ func (r *grantResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 }
 
 func (r *grantResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m grantModel) toSpec() (map[string]any, error) {

@@ -7,14 +7,16 @@ state and drift detection.
 
 ## Provider configuration
 
-The provider talks to a single control-plane endpoint, for a single org, with an
-org-admin bearer token. Each attribute has an environment-variable fallback.
+The provider talks to a single control-plane endpoint with a bearer token. With
+`org` set it acts inside that one org (org-admin token). Without `org` it runs in
+**operator mode** (platform-admin token). Each attribute has an environment-variable
+fallback.
 
 | Attribute  | Env var          | Description                                   |
 | ---------- | ---------------- | --------------------------------------------- |
 | `endpoint` | `XEMA_ENDPOINT`  | Control-plane-api base URL.                   |
-| `org`      | `XEMA_ORG`       | Xema organization id.                         |
-| `token`    | `XEMA_TOKEN`     | Org-admin bearer token (sensitive).           |
+| `org`      | `XEMA_ORG`       | Xema organization id (optional; omit for operator mode). |
+| `token`    | `XEMA_TOKEN`     | Bearer token (sensitive): org-admin, or platform-admin in operator mode. |
 
 ```hcl
 terraform {
@@ -31,6 +33,52 @@ provider "xema" {
   token    = var.xema_token
 }
 ```
+
+### Operator mode and the two-provider pattern
+
+Operator mode needs a realm `platform_admin` user token (a user JWT, not a service token); the control plane relays it to identity-api, which authorizes the acting human. No `X-Xema-Org-Id` header is required or sent.
+
+Only `xema_org` is installation-scoped. Every other resource and data source,
+including `data.xema_org`, is org-scoped. Without `org` the provider never falls
+back to a default org: any org-scoped resource or data source fails at plan with
+"this resource is org-scoped; configure the provider with org".
+
+To create the first org and then manage what lives in it, use two providers: an
+aliased operator provider with no `org`, and an org-scoped provider whose `org`
+is the created org's id.
+
+```hcl
+provider "xema" {
+  alias    = "operator"
+  endpoint = "https://control-plane.xema.dev"
+  token    = var.platform_admin_token
+}
+
+resource "xema_org" "acme" {
+  provider     = xema.operator
+  name         = "acme"
+  display_name = "Acme"
+}
+
+provider "xema" {
+  endpoint = "https://control-plane.xema.dev"
+  org      = xema_org.acme.id
+  token    = var.org_admin_token
+}
+
+resource "xema_project" "demo" {
+  name = "demo"
+}
+```
+
+A single `terraform apply` from empty state works: Terraform accepts the unknown
+`org` at plan, plans the org-scoped resources against it, and configures the
+second provider with the real id once `xema_org.acme` exists (verified with
+Terraform against a mock control plane, create and destroy). The org-scoped
+provider holds no usable client until then, so nothing can reach the control
+plane with a guessed org. Data sources read through a provider whose `org` is still
+unknown at plan were not exercised; if you hit a problem there, or prefer separate blast radii, split
+into two stages (one state creates the org, a second takes `org` from its output).
 
 ## Resources
 
@@ -62,9 +110,9 @@ or key-order differences never show as drift.
 
 > **`xema_org`** (resource) is installation-scoped: creating, updating and
 > deleting an org uses the control-plane installation routes, needs a
-> platform-admin token (the configured `org` is only the request's transport context). Installation authority
+> platform-admin token, and works in operator mode (no `org`). Installation authority
 > never implies org admin, and vice versa. An org admin reads their own org via
-> the `xema_org` data source. (The provider `org` attribute is still required.)
+> the `xema_org` data source.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field.
 > **`xema_space`** updates `classification` in place; changing `ref`,

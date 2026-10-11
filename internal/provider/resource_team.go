@@ -76,7 +76,7 @@ func (r *teamResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 }
 
 func (r *teamResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m teamModel) toSpec() map[string]any {
