@@ -17,8 +17,8 @@ import (
 // be wrong, so it is asserted directly rather than through a live apply.
 func TestModelStrategyRoundTripsItsSpec(t *testing.T) {
 	declared := modelStrategyModel{
-		Slug:               types.StringValue("presenca-default"),
-		DisplayName:        types.StringValue("Presenca default"),
+		Slug:               types.StringValue("acme-default"),
+		DisplayName:        types.StringValue("Acme default"),
 		Description:        types.StringValue("Editorial workloads"),
 		Tier:               types.StringValue("balanced"),
 		ProviderFocus:      types.StringValue("mixed"),
@@ -36,7 +36,7 @@ func TestModelStrategyRoundTripsItsSpec(t *testing.T) {
 
 	spec := declared.toSpec()
 
-	if spec["slug"] != "presenca-default" || spec["defaultModelSlug"] != "model-a" {
+	if spec["slug"] != "acme-default" || spec["defaultModelSlug"] != "model-a" {
 		t.Fatalf("strategy fields did not reach the spec: %#v", spec)
 	}
 	if spec["isDefault"] != true {
@@ -50,7 +50,7 @@ func TestModelStrategyRoundTripsItsSpec(t *testing.T) {
 	var readback modelStrategyModel
 	readback.applyReadback(spec)
 
-	if readback.Slug.ValueString() != "presenca-default" {
+	if readback.Slug.ValueString() != "acme-default" {
 		t.Fatalf("slug did not round-trip: %q", readback.Slug.ValueString())
 	}
 	if readback.DefaultTemperature.ValueFloat64() != 0.2 {

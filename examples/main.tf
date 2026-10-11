@@ -112,7 +112,7 @@ resource "xema_biome_install" "slack" {
   biome_id     = "slack-connector"
   config_json  = jsonencode({ defaultChannel = "#general" })
   connections = jsonencode([{ adapterKind = "chat", orgConnectionId = "oi_123" }])
-  resources    = jsonencode([{ adapterKind = "chat", selector = { team = "T123" } }])
+  resources    = jsonencode([{ adapterKind = "chat", selector = { team = "platform" } }])
 }
 
 # An org portal (an org-scoped app). Opaque blobs are normalized JSON.
