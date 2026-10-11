@@ -132,6 +132,61 @@ as a computed attribute.
 The provider publishes no distribution lock.
 A lock is the sealed artifact `xema edition seal` produces.
 
+## Installing from a release
+
+Tagging `vX.Y.Z` runs `.github/workflows/release.yml` (goreleaser) and attaches
+to the GitHub release: `terraform-provider-xema_<ver>_<os>_<arch>.zip` for
+linux and darwin on amd64 and arm64, `terraform-provider-xema_<ver>_SHA256SUMS`,
+and `terraform-provider-xema_<ver>_manifest.json`.
+
+**Not signed.** There is no public Terraform Registry listing and no GPG key,
+so goreleaser's usual GPG signature of `SHA256SUMS` is left out. Integrity is
+the committed `.terraform.lock.hcl`, whose hashes Terraform checks on every
+`init`. There is exactly one install mechanism: a filesystem mirror.
+
+1. Download the release zips and `SHA256SUMS`, verify them once with
+   `sha256sum -c`, and lay them out as a mirror, using the committed script
+   (it also writes the CLI config in step 2):
+
+   ```bash
+   tooling/install-from-release.sh X.Y.Z /opt/xema-mirror
+   ```
+
+   The result is `/opt/xema-mirror/registry.terraform.io/xema-dev/xema/terraform-provider-xema_X.Y.Z_<os>_<arch>.zip`
+   (Terraform's packed filesystem-mirror layout).
+
+2. Commit a CLI config with a `filesystem_mirror` for this source only and
+   `direct` for everything else (the script writes it to
+   `/opt/xema-mirror/terraform.rc`), and point Terraform at it:
+
+   ```hcl
+   provider_installation {
+     filesystem_mirror {
+       path    = "/opt/xema-mirror"
+       include = ["registry.terraform.io/xema-dev/xema"]
+     }
+     direct {
+       exclude = ["registry.terraform.io/xema-dev/xema"]
+     }
+   }
+   ```
+
+   ```bash
+   export TF_CLI_CONFIG_FILE=/opt/xema-mirror/terraform.rc
+   ```
+
+3. Pin the version in `required_providers` (`version = "= X.Y.Z"`), record the
+   hashes for every platform that will run the configuration, and commit the
+   lock file:
+
+   ```bash
+   terraform providers lock -fs-mirror=/opt/xema-mirror \
+     -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64
+   ```
+
+   After that, `terraform init` fails if the installed package does not match
+   the pinned hashes.
+
 ## Development
 
 ```bash

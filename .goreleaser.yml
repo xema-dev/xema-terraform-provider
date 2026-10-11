@@ -1,0 +1,44 @@
+# Release build for the Xema Terraform provider. Triggered by a `v*` tag via
+# .github/workflows/release.yml. Mirrors the layout Terraform expects
+# (terraform-provider-xema_<version>_<os>_<arch>.zip) but deliberately omits
+# the GPG `signs` block of HashiCorp's template: no public Registry and no
+# signing key yet. Consumers pin hashes with Terraform's lock file instead.
+version: 2
+
+project_name: terraform-provider-xema
+
+before:
+  hooks:
+    - go mod tidy -diff
+
+builds:
+  - id: provider
+    binary: "{{ .ProjectName }}_v{{ .Version }}"
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+
+release:
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+
+changelog:
+  disable: true
