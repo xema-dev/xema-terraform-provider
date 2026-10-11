@@ -123,13 +123,11 @@ func TestResourceSchemasValid(t *testing.T) {
 // kinds, one for one: a data source is the read-by-id view of a kind the
 // control plane manages, and nothing else.
 //
-// It exists because the provider once carried `xema_distribution_lock`, which
-// read no managed kind. It posted a distribution to fleet-control's resolver
-// and published the answer as a `lock`. That answer is an unsealed preview: no
-// deployment admits it, and only the sealed lock `xema edition seal` produces
-// is a lock. A data source that names a preview a lock hands Terraform a value
-// that looks admissible wherever a lock is required, so the provider publishes
-// neither. A new data source without a resource of the same name fails here.
+// Only the sealed lock `xema edition seal` produces is a lock; no deployment
+// admits an unsealed preview. A data source that names a preview a lock hands
+// Terraform a value that looks admissible wherever a lock is required, so the
+// provider publishes neither. A new data source without a resource of the same
+// name fails here.
 func TestEveryDataSourceReadsAManagedKind(t *testing.T) {
 	xp, ok := New("test")().(*xemaProvider)
 	if !ok {
