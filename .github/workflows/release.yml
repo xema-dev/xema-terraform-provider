@@ -1,0 +1,39 @@
+name: Release
+
+# A `v*` tag builds the provider zips, SHA256SUMS and the provider manifest with
+# goreleaser and attaches them to a GitHub release. No GPG signing (no public
+# Terraform Registry yet); see README "Installing from a release".
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    name: goreleaser
+    # GitHub-hosted, same as ci.yml: the org's self-hosted [self-hosted, linux]
+    # pool cannot serve this public repo (runner group disallows public repos).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "v2.18.3"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
