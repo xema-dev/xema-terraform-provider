@@ -11,10 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-
-	"github.com/xema-dev/xema-terraform-provider/internal/client"
 )
 
 // errFromDiags collapses error-level diagnostics into a single error so a
@@ -37,25 +34,6 @@ func errFromDiags(diags diag.Diagnostics) error {
 // pathOf is a tiny wrapper to build an attribute path at the provider root.
 func pathOf(attr string) path.Path {
 	return path.Root(attr)
-}
-
-// clientFromResource extracts the configured *client.Client from a resource
-// Configure request, recording a diagnostic on a type mismatch. Returns nil
-// during the early Configure pass when ProviderData is not yet set.
-func clientFromResource(req resource.ConfigureRequest, diags interface {
-	AddError(summary, detail string)
-},
-) *client.Client {
-	if req.ProviderData == nil {
-		return nil
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		diags.AddError("Unexpected provider data",
-			"Expected *client.Client. This is a bug in the provider; please report it.")
-		return nil
-	}
-	return c
 }
 
 // optString returns a pointer-safe string value, treating null/unknown as "".

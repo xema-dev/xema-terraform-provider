@@ -92,7 +92,7 @@ func (r *spaceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 }
 
 func (r *spaceResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m spaceModel) toSpec() (map[string]any, error) {

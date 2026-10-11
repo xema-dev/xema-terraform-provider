@@ -127,7 +127,7 @@ func (r *portalResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 }
 
 func (r *portalResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m portalModel) toSpec() (map[string]any, error) {

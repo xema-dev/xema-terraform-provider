@@ -123,7 +123,7 @@ func (r *providerResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 }
 
 func (r *providerResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 // ValidateConfig refuses a provider that names NEITHER credential form or BOTH,

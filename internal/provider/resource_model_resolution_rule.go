@@ -153,7 +153,7 @@ func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.Schem
 }
 
 func (r *modelResolutionRuleResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {

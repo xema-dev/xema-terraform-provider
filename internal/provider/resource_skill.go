@@ -116,7 +116,7 @@ func (r *skillResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 }
 
 func (r *skillResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromResource(req, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m skillModel) toSpec(ctx context.Context) (map[string]any, error) {

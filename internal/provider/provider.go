@@ -63,13 +63,15 @@ func (p *xemaProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 				Description: "Base URL of the Xema control-plane-api. May also be set via the XEMA_ENDPOINT environment variable.",
 			},
 			"org": schema.StringAttribute{
-				Optional:    true,
-				Description: "Xema organization id. May also be set via the XEMA_ORG environment variable.",
+				Optional: true,
+				Description: "Xema organization id. May also be set via the XEMA_ORG environment variable. " +
+					"Omit it to run in operator mode: only installation-scoped resources (`xema_org`) work, " +
+					"and every org-scoped resource or data source fails with a diagnostic.",
 			},
 			"token": schema.StringAttribute{
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Org-admin bearer token. May also be set via the XEMA_TOKEN environment variable.",
+				Description: "Bearer token: org-admin with `org` set, platform-admin in operator mode. May also be set via the XEMA_TOKEN environment variable.",
 			},
 		},
 	}
@@ -83,7 +85,11 @@ func (p *xemaProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	endpoint := resolve(cfg.Endpoint, envEndpoint)
-	org := resolve(cfg.Org, envOrg)
+	orgPending := cfg.Org.IsUnknown()
+	org := ""
+	if !orgPending {
+		org = resolve(cfg.Org, envOrg)
+	}
 	token := resolve(cfg.Token, envToken)
 
 	if endpoint == "" {
@@ -91,21 +97,24 @@ func (p *xemaProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 			"Missing control-plane endpoint",
 			"Set the `endpoint` provider attribute or the XEMA_ENDPOINT environment variable.")
 	}
-	if org == "" {
-		resp.Diagnostics.AddAttributeError(pathOf("org"),
-			"Missing organization id",
-			"Set the `org` provider attribute or the XEMA_ORG environment variable.")
-	}
 	if token == "" {
 		resp.Diagnostics.AddAttributeError(pathOf("token"),
-			"Missing org-admin token",
+			"Missing bearer token",
 			"Set the `token` provider attribute or the XEMA_TOKEN environment variable.")
 	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	c := client.New(endpoint, org, token, nil)
+	// No org (configured or via XEMA_ORG) is operator mode, never a default org.
+	// An org that is unknown at plan (fed from another resource) is deferred to
+	// apply, where it is known.
+	var c *client.Client
+	if orgPending {
+		c = client.NewOrgPending(endpoint, token, nil)
+	} else {
+		c = client.New(endpoint, org, token, nil)
+	}
 	resp.DataSourceData = c
 	resp.ResourceData = c
 }
