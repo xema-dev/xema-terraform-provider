@@ -116,8 +116,9 @@ or key-order differences never show as drift.
 > the `xema_org` data source.
 > **`xema_model_strategy`** is a named container of rules: its `rules` set is the
 > strategy's complete rule set, replaced as a whole on each apply (`rules = []`
-> for none). The replace is guarded by the strategy's version, so a concurrent
-> change to the rules fails the apply instead of being overwritten; re-run it.
+> for none). The declared `rules` set is authoritative: apply replaces the
+> strategy's rules, including any change made since Terraform's refresh. Only
+> the control plane's own read-write window is guarded by the strategy's version.
 > Each rule targets a model id (`target_model_id`) and has the same body as
 > **`xema_model_resolution_rule`**, which declares an org-level rule only.
 > **`xema_org_model_default`** is the organization's one default model: one per

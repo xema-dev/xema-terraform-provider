@@ -55,8 +55,9 @@ func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaReque
 	resp.Schema = schema.Schema{
 		Description: "A model strategy: a named container of model resolution rules, bound to projects. " +
 			"It holds only rules, declared in `rules`; each rule targets a model id. The rule set is replaced " +
-			"as a whole, guarded by the strategy's version, so a concurrent change to the rules is refused " +
-			"rather than overwritten. " +
+			"as a whole: the declared `rules` set is authoritative and replaces the strategy's rules on apply, " +
+			"including a change made since Terraform's refresh. Only the control plane's own read-write window " +
+			"is guarded by the strategy's version. " +
 			"Managed through llm-registry-api via the control plane. The API is authoritative: every " +
 			"server-owned value is refreshed from it on each read, so state can be rebuilt by import.",
 		Attributes: map[string]schema.Attribute{
@@ -222,8 +223,8 @@ func (r *modelStrategyResource) Update(ctx context.Context, req resource.UpdateR
 	if err != nil {
 		if client.IsConflict(err) {
 			resp.Diagnostics.AddError("Model strategy rules changed concurrently",
-				"The strategy's rule set was modified after it was read, so the replacement was refused "+
-					"instead of overwriting that change. Run the apply again to re-read the strategy and converge. "+
+				"The strategy's rule set changed between the control plane's read of its version and its replace, "+
+					"so that replace was refused. Run the apply again to converge on the declared rules. "+
 					"Upstream said: "+err.Error())
 			return
 		}
