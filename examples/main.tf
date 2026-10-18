@@ -47,23 +47,24 @@ resource "xema_model" "gpt4o_mini" {
 }
 
 # A model strategy is a named container of rules; it holds nothing else. Bind it
-# to a project and its rules apply to that project.
+# to a project and its rules apply to that project. The rules are the strategy's
+# `rules` set, replaced as a whole on every apply (`rules = []` for none).
+# `target_model_id` is the registry model record id (LlmModel.id). A selector
+# needs at least one dimension; here the lane decides.
 resource "xema_model_strategy" "house" {
   slug         = "house"
   display_name = "House strategy"
-}
 
-# A rule owned by the strategy. `target_model_id` is the registry model record id
-# (LlmModel.id). A selector needs at least one dimension; here the lane decides.
-resource "xema_model_resolution_rule" "by_lane" {
-  strategy_id             = xema_model_strategy.house.id
-  target_model_id         = xema_model.gpt4o.id
-  target_reasoning_effort = "high"
-  priority                = 20
-
-  selector = {
-    model_lane = "coder"
-  }
+  rules = [
+    {
+      target_model_id         = xema_model.gpt4o.id
+      target_reasoning_effort = "high"
+      priority                = 20
+      selector = {
+        model_lane = "coder"
+      }
+    },
+  ]
 }
 
 # An org-level rule (no strategy): most-specific match wins.

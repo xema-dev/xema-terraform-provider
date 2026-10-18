@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -35,10 +36,11 @@ func NewModelStrategyResource() resource.Resource {
 }
 
 type modelStrategyModel struct {
-	ID          types.String `tfsdk:"id"`
-	Slug        types.String `tfsdk:"slug"`
-	DisplayName types.String `tfsdk:"display_name"`
-	Description types.String `tfsdk:"description"`
+	ID          types.String    `tfsdk:"id"`
+	Slug        types.String    `tfsdk:"slug"`
+	DisplayName types.String    `tfsdk:"display_name"`
+	Description types.String    `tfsdk:"description"`
+	Rules       []ruleBodyModel `tfsdk:"rules"`
 }
 
 func (r *modelStrategyResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -52,7 +54,9 @@ func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaReque
 	// result with "Provider produced inconsistent result after apply".
 	resp.Schema = schema.Schema{
 		Description: "A model strategy: a named container of model resolution rules, bound to projects. " +
-			"It holds only rules — declare them with `xema_model_resolution_rule` and its `strategy_id`. " +
+			"It holds only rules, declared in `rules`; each rule targets a model id. The rule set is replaced " +
+			"as a whole, guarded by the strategy's version, so a concurrent change to the rules is refused " +
+			"rather than overwritten. " +
 			"Managed through llm-registry-api via the control plane. The API is authoritative: every " +
 			"server-owned value is refreshed from it on each read, so state can be rebuilt by import.",
 		Attributes: map[string]schema.Attribute{
@@ -80,6 +84,13 @@ func (r *modelStrategyResource) Schema(_ context.Context, _ resource.SchemaReque
 				Computed:    true,
 				Description: "What this strategy is for.",
 			},
+			"rules": schema.SetNestedAttribute{
+				Required: true,
+				Description: "The strategy's complete rule set (`[]` for none). Each rule has the same body as " +
+					"`xema_model_resolution_rule` and competes with the organization's rules for the projects " +
+					"the strategy is bound to; a strategy rule wins a tie.",
+				NestedObject: schema.NestedAttributeObject{Attributes: strategyRuleAttributes()},
+			},
 		},
 	}
 }
@@ -88,21 +99,57 @@ func (r *modelStrategyResource) Configure(_ context.Context, req resource.Config
 	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
-func (m modelStrategyModel) toSpec() map[string]any {
+// strategyRuleAttributes is a rule body as a strategy declares it. Priority is
+// required here: a set element cannot read back a server default the plan did
+// not contain.
+func strategyRuleAttributes() map[string]schema.Attribute {
+	attrs := ruleTargetAttributes()
+	attrs["selector"] = ruleSelectorAttribute()
+	attrs["priority"] = schema.Int64Attribute{Required: true, Description: rulePriorityDescription}
+	return attrs
+}
+
+func (m modelStrategyModel) toSpec(ctx context.Context) (map[string]any, error) {
+	rules := make([]any, 0, len(m.Rules))
+	for _, rule := range m.Rules {
+		spec, err := rule.toSpec(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, spec)
+	}
 	spec := map[string]any{
 		"slug":        m.Slug.ValueString(),
 		"displayName": m.DisplayName.ValueString(),
+		"rules":       rules,
 	}
 	if s := optString(m.Description); s != "" {
 		spec["description"] = s
 	}
-	return spec
+	return spec, nil
 }
 
-func (m *modelStrategyModel) applyReadback(spec map[string]any) {
+func (m *modelStrategyModel) applyReadback(ctx context.Context, spec map[string]any) error {
 	m.Slug = types.StringValue(specString(spec, "slug"))
 	m.DisplayName = types.StringValue(specString(spec, "displayName"))
 	m.Description = strOrNull(specString(spec, "description"))
+
+	// An empty slice, not nil: nil reads back as a NULL set, and an empty rule
+	// set is the declared `rules = []`.
+	m.Rules = []ruleBodyModel{}
+	raw, _ := spec["rules"].([]any)
+	for _, item := range raw {
+		ruleSpec, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("strategy rule is not an object: %#v", item)
+		}
+		var rule ruleBodyModel
+		if err := rule.applyReadback(ctx, ruleSpec); err != nil {
+			return err
+		}
+		m.Rules = append(m.Rules, rule)
+	}
+	return nil
 }
 
 func (r *modelStrategyResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -112,7 +159,12 @@ func (r *modelStrategyResource) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 
-	handle, err := r.client.Create(ctx, modelStrategyKind, plan.toSpec())
+	spec, err := plan.toSpec(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid strategy rules", err.Error())
+		return
+	}
+	handle, err := r.client.Create(ctx, modelStrategyKind, spec)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create model strategy", err.Error())
 		return
@@ -124,7 +176,10 @@ func (r *modelStrategyResource) Create(ctx context.Context, req resource.CreateR
 		resp.Diagnostics.AddError("Failed to read model strategy after create", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec)
+	if err := plan.applyReadback(ctx, res.Spec); err != nil {
+		resp.Diagnostics.AddError("Failed to map model strategy", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -144,7 +199,10 @@ func (r *modelStrategyResource) Read(ctx context.Context, req resource.ReadReque
 		resp.Diagnostics.AddError("Failed to read model strategy", err.Error())
 		return
 	}
-	state.applyReadback(res.Spec)
+	if err := state.applyReadback(ctx, res.Spec); err != nil {
+		resp.Diagnostics.AddError("Failed to map model strategy", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -155,12 +213,27 @@ func (r *modelStrategyResource) Update(ctx context.Context, req resource.UpdateR
 		return
 	}
 
-	res, err := r.client.Update(ctx, modelStrategyKind, plan.ID.ValueString(), plan.toSpec())
+	spec, err := plan.toSpec(ctx)
 	if err != nil {
+		resp.Diagnostics.AddError("Invalid strategy rules", err.Error())
+		return
+	}
+	res, err := r.client.Update(ctx, modelStrategyKind, plan.ID.ValueString(), spec)
+	if err != nil {
+		if client.IsConflict(err) {
+			resp.Diagnostics.AddError("Model strategy rules changed concurrently",
+				"The strategy's rule set was modified after it was read, so the replacement was refused "+
+					"instead of overwriting that change. Run the apply again to re-read the strategy and converge. "+
+					"Upstream said: "+err.Error())
+			return
+		}
 		resp.Diagnostics.AddError("Failed to update model strategy", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec)
+	if err := plan.applyReadback(ctx, res.Spec); err != nil {
+		resp.Diagnostics.AddError("Failed to map model strategy", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

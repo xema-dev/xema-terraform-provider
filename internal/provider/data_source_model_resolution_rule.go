@@ -8,7 +8,6 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/xema-dev/xema-terraform-provider/internal/client"
 )
@@ -32,51 +31,14 @@ func (d *modelResolutionRuleDataSource) Metadata(_ context.Context, req datasour
 }
 
 func (d *modelResolutionRuleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	attrs := ruleDataSourceAttributes()
+	attrs["id"] = schema.StringAttribute{
+		Required:    true,
+		Description: "Service-minted rule id (the control-plane physical id).",
+	}
 	resp.Schema = schema.Schema{
-		Description: "Look up an existing Model Resolution Matrix rule by its physical id.",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Required:    true,
-				Description: "Service-minted rule id (the control-plane physical id).",
-			},
-			"selector": schema.SingleNestedAttribute{
-				Computed:    true,
-				Description: "Dimensional selector (at least one dimension).",
-				Attributes: map[string]schema.Attribute{
-					"agent":      schema.StringAttribute{Computed: true, Description: "Match on agent slug."},
-					"skill":      schema.StringAttribute{Computed: true, Description: "Match on skill slug."},
-					"project":    schema.StringAttribute{Computed: true, Description: "Match on project id."},
-					"stage":      schema.StringAttribute{Computed: true, Description: "Match on pipeline stage/phase key."},
-					"purpose":    schema.StringAttribute{Computed: true, Description: "Match on invocation purpose."},
-					"model_lane": schema.StringAttribute{Computed: true, Description: modelLaneSelectorDescription},
-					"extra": schema.MapAttribute{
-						Computed:    true,
-						ElementType: types.StringType,
-						Description: "Any registry-added selector dimension, as a string map.",
-					},
-				},
-			},
-			"strategy_id": schema.StringAttribute{
-				Computed:    true,
-				Description: "The model strategy that owns this rule; null for an org-level rule.",
-			},
-			"target_model_id": schema.StringAttribute{
-				Computed:    true,
-				Description: "Registry model record id (`LlmModel.id`) the rule routes to.",
-			},
-			"target_temperature": schema.Float64Attribute{
-				Computed:    true,
-				Description: "Sampling temperature carried by the resolved model.",
-			},
-			"target_reasoning_effort": schema.StringAttribute{
-				Computed:    true,
-				Description: "Reasoning effort carried by the resolved model.",
-			},
-			"priority": schema.Int64Attribute{
-				Computed:    true,
-				Description: "Tie-breaker priority when two rules match the same number of dimensions.",
-			},
-		},
+		Description: "Look up an existing org-level Model Resolution Matrix rule by its physical id.",
+		Attributes:  attrs,
 	}
 }
 

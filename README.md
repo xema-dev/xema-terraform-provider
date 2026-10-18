@@ -114,6 +114,14 @@ or key-order differences never show as drift.
 > platform-admin token, and works in operator mode (no `org`). Installation authority
 > never implies org admin, and vice versa. An org admin reads their own org via
 > the `xema_org` data source.
+> **`xema_model_strategy`** is a named container of rules: its `rules` set is the
+> strategy's complete rule set, replaced as a whole on each apply (`rules = []`
+> for none). The replace is guarded by the strategy's version, so a concurrent
+> change to the rules fails the apply instead of being overwritten; re-run it.
+> Each rule targets a model id (`target_model_id`) and has the same body as
+> **`xema_model_resolution_rule`**, which declares an org-level rule only.
+> **`xema_org_model_default`** is the organization's one default model: one per
+> org, set by `model_id`, and destroying it unsets the default.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field.
 > **`xema_space`** updates `classification` in place; changing `ref`,

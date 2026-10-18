@@ -13,7 +13,6 @@ import (
 
 func TestModelResolutionRuleRoundTripsItsSpec(t *testing.T) {
 	declared := mrrModel{
-		StrategyID:            types.StringValue("strat-1"),
 		Selector:              &selectorModel{ModelLane: types.StringValue("coder"), Extra: types.MapNull(types.StringType)},
 		TargetModelID:         types.StringValue("model-uuid"),
 		TargetTemperature:     types.Float64Value(0.2),
@@ -25,7 +24,7 @@ func TestModelResolutionRuleRoundTripsItsSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec["targetModelId"] != "model-uuid" || spec["strategyId"] != "strat-1" || spec["targetReasoningEffort"] != "high" {
+	if spec["targetModelId"] != "model-uuid" || spec["targetReasoningEffort"] != "high" {
 		t.Fatalf("rule fields did not reach the spec: %#v", spec)
 	}
 	for _, gone := range []string{"targetKind", "targetProviderSlug", "targetModelLane", "isDefault"} {
@@ -38,7 +37,7 @@ func TestModelResolutionRuleRoundTripsItsSpec(t *testing.T) {
 	if err := readback.applyReadback(context.Background(), spec); err != nil {
 		t.Fatal(err)
 	}
-	if readback.TargetModelID.ValueString() != "model-uuid" || readback.StrategyID.ValueString() != "strat-1" {
+	if readback.TargetModelID.ValueString() != "model-uuid" {
 		t.Fatalf("ids did not round-trip: %#v", readback)
 	}
 	if readback.Selector == nil || readback.Selector.ModelLane.ValueString() != "coder" {
@@ -49,8 +48,8 @@ func TestModelResolutionRuleRoundTripsItsSpec(t *testing.T) {
 	}
 }
 
-// An org-level rule has no strategy: strategy_id reads back NULL, not "".
-func TestModelResolutionRuleOrgLevelHasNoStrategy(t *testing.T) {
+// A rule is org-level: it carries no strategy, in the spec or in the schema.
+func TestModelResolutionRuleIsOrgLevel(t *testing.T) {
 	declared := mrrModel{
 		Selector:      &selectorModel{Project: types.StringValue("p1"), Extra: types.MapNull(types.StringType)},
 		TargetModelID: types.StringValue("m"),
@@ -60,14 +59,7 @@ func TestModelResolutionRuleOrgLevelHasNoStrategy(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := spec["strategyId"]; ok {
-		t.Fatalf("an org-level rule must not write strategyId: %#v", spec)
-	}
-	var readback mrrModel
-	if err := readback.applyReadback(context.Background(), spec); err != nil {
-		t.Fatal(err)
-	}
-	if !readback.StrategyID.IsNull() {
-		t.Fatalf("absent strategy became %v, not null", readback.StrategyID)
+		t.Fatalf("a rule must not write strategyId: %#v", spec)
 	}
 }
 
@@ -86,7 +78,7 @@ func TestModelResolutionRuleSchema(t *testing.T) {
 	if a := resp.Schema.Attributes["selector"]; !a.IsRequired() {
 		t.Errorf("selector is required: an empty selector is refused upstream")
 	}
-	if a, ok := resp.Schema.Attributes["strategy_id"]; !ok || !a.IsOptional() {
-		t.Errorf("strategy_id must be Optional")
+	if _, ok := resp.Schema.Attributes["strategy_id"]; ok {
+		t.Errorf("a strategy owns its rules through xema_model_strategy.rules; strategy_id must not exist")
 	}
 }

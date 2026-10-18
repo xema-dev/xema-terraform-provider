@@ -35,6 +35,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -269,4 +270,11 @@ func IsNotFound(err error) bool {
 		apiErr = e
 	}
 	return apiErr != nil && apiErr.Status == http.StatusNotFound
+}
+
+// IsConflict reports whether err is an APIError with a 409 status, which the
+// owning service uses for an optimistic-concurrency refusal.
+func IsConflict(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusConflict
 }

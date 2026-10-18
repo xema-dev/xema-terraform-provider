@@ -50,6 +50,11 @@ func (d *modelStrategyDataSource) Schema(_ context.Context, _ datasource.SchemaR
 				Computed:    true,
 				Description: "What this strategy is for.",
 			},
+			"rules": schema.SetNestedAttribute{
+				Computed:     true,
+				Description:  "The strategy's rule set.",
+				NestedObject: schema.NestedAttributeObject{Attributes: ruleDataSourceAttributes()},
+			},
 		},
 	}
 }
@@ -70,6 +75,9 @@ func (d *modelStrategyDataSource) Read(ctx context.Context, req datasource.ReadR
 		resp.Diagnostics.AddError("Failed to read model strategy", err.Error())
 		return
 	}
-	data.applyReadback(res.Spec)
+	if err := data.applyReadback(ctx, res.Spec); err != nil {
+		resp.Diagnostics.AddError("Failed to map model strategy", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

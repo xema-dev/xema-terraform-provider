@@ -72,7 +72,6 @@ type selectorModel struct {
 type mrrModel struct {
 	ID                    types.String   `tfsdk:"id"`
 	Selector              *selectorModel `tfsdk:"selector"`
-	StrategyID            types.String   `tfsdk:"strategy_id"`
 	TargetModelID         types.String   `tfsdk:"target_model_id"`
 	TargetTemperature     types.Float64  `tfsdk:"target_temperature"`
 	TargetReasoningEffort types.String   `tfsdk:"target_reasoning_effort"`
@@ -84,63 +83,26 @@ func (r *modelResolutionRuleResource) Metadata(_ context.Context, req resource.M
 }
 
 func (r *modelResolutionRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{
-		Description: "A Model Resolution Matrix rule, managed through llm-registry-api via the control plane. " +
-			"Among matching rules the one matching the most selector dimensions wins; ties break by priority, " +
-			"then a strategy rule over an org-level rule, then the lower id.",
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Computed:    true,
-				Description: "Service-minted rule id (the control-plane physical id).",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"strategy_id": schema.StringAttribute{
-				Optional: true,
-				Description: "The model strategy that owns this rule; omit for an org-level rule. A strategy's " +
-					"rules apply to the projects the strategy is bound to. Immutable: changing it replaces the rule.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"selector": schema.SingleNestedAttribute{
-				Required:    true,
-				Description: "Dimensional selector. At least one dimension is required: an empty selector is refused. The organization default model is `xema_org_model_default`.",
-				Attributes: map[string]schema.Attribute{
-					"agent":      schema.StringAttribute{Optional: true, Description: "Match on agent slug."},
-					"skill":      schema.StringAttribute{Optional: true, Description: "Match on skill slug."},
-					"project":    schema.StringAttribute{Optional: true, Description: "Match on project id."},
-					"stage":      schema.StringAttribute{Optional: true, Description: "Match on pipeline stage/phase key."},
-					"purpose":    schema.StringAttribute{Optional: true, Description: "Match on invocation purpose."},
-					"model_lane": schema.StringAttribute{Optional: true, Description: modelLaneSelectorDescription},
-					"extra": schema.MapAttribute{
-						Optional:    true,
-						ElementType: types.StringType,
-						Description: "Any registry-added selector dimension, as a string map.",
-					},
-				},
-			},
-			"target_model_id": schema.StringAttribute{
-				Required: true,
-				Description: "Registry model record id (`LlmModel.id`) the rule routes to. It must be an active " +
-					"model on an active provider the organization or the platform owns; otherwise the write is refused.",
-			},
-			"target_temperature": schema.Float64Attribute{
-				Optional:    true,
-				Description: "Sampling temperature (0-2) carried by the resolved model.",
-			},
-			"target_reasoning_effort": schema.StringAttribute{
-				Optional: true,
-				Description: "Reasoning effort carried by the resolved model, forwarded verbatim to the provider. " +
-					"OPEN vocabulary owned by the provider.",
-			},
-			"priority": schema.Int64Attribute{
-				Optional:    true,
-				Computed:    true,
-				Description: "Tie-breaker priority when two rules match the same number of dimensions.",
-			},
+	attrs := ruleTargetAttributes()
+	attrs["id"] = schema.StringAttribute{
+		Computed:    true,
+		Description: "Service-minted rule id (the control-plane physical id).",
+		PlanModifiers: []planmodifier.String{
+			stringplanmodifier.UseStateForUnknown(),
 		},
+	}
+	attrs["selector"] = ruleSelectorAttribute()
+	attrs["priority"] = schema.Int64Attribute{
+		Optional:    true,
+		Computed:    true,
+		Description: rulePriorityDescription,
+	}
+	resp.Schema = schema.Schema{
+		Description: "An org-level Model Resolution Matrix rule, managed through llm-registry-api via the " +
+			"control plane. A rule targets a model id. Rules that belong to a strategy are declared in the " +
+			"`rules` of `xema_model_strategy`, not here. Among matching rules the one matching the most selector " +
+			"dimensions wins; ties break by priority, then a strategy rule over an org-level rule, then the lower id.",
+		Attributes: attrs,
 	}
 }
 
@@ -148,99 +110,30 @@ func (r *modelResolutionRuleResource) Configure(_ context.Context, req resource.
 	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
+func (m mrrModel) body() ruleBodyModel {
+	return ruleBodyModel{
+		Selector:              m.Selector,
+		TargetModelID:         m.TargetModelID,
+		TargetTemperature:     m.TargetTemperature,
+		TargetReasoningEffort: m.TargetReasoningEffort,
+		Priority:              m.Priority,
+	}
+}
+
 func (m mrrModel) toSpec(ctx context.Context) (map[string]any, error) {
-	spec := map[string]any{"targetModelId": m.TargetModelID.ValueString()}
-
-	if m.Selector != nil {
-		sel := map[string]any{}
-		if v := optString(m.Selector.Agent); v != "" {
-			sel["agent"] = v
-		}
-		if v := optString(m.Selector.Skill); v != "" {
-			sel["skill"] = v
-		}
-		if v := optString(m.Selector.Project); v != "" {
-			sel["project"] = v
-		}
-		if v := optString(m.Selector.Stage); v != "" {
-			sel["stage"] = v
-		}
-		if v := optString(m.Selector.Purpose); v != "" {
-			sel["purpose"] = v
-		}
-		if v := optString(m.Selector.ModelLane); v != "" {
-			sel["modelLane"] = v
-		}
-		if !m.Selector.Extra.IsNull() && !m.Selector.Extra.IsUnknown() {
-			extra := map[string]string{}
-			if diags := m.Selector.Extra.ElementsAs(ctx, &extra, false); diags.HasError() {
-				return nil, errFromDiags(diags)
-			}
-			if len(extra) > 0 {
-				sel["extra"] = extra
-			}
-		}
-		spec["selector"] = sel
-	}
-
-	if v := optString(m.StrategyID); v != "" {
-		spec["strategyId"] = v
-	}
-	if v := optString(m.TargetReasoningEffort); v != "" {
-		spec["targetReasoningEffort"] = v
-	}
-	if !m.TargetTemperature.IsNull() && !m.TargetTemperature.IsUnknown() {
-		spec["targetTemperature"] = m.TargetTemperature.ValueFloat64()
-	}
-	if !m.Priority.IsNull() && !m.Priority.IsUnknown() {
-		spec["priority"] = m.Priority.ValueInt64()
-	}
-	return spec, nil
+	return m.body().toSpec(ctx)
 }
 
 func (m *mrrModel) applyReadback(ctx context.Context, spec map[string]any) error {
-	m.StrategyID = strOrNull(specString(spec, "strategyId"))
-	m.TargetModelID = types.StringValue(specString(spec, "targetModelId"))
-	m.TargetReasoningEffort = strOrNull(specString(spec, "targetReasoningEffort"))
-
-	if v, ok := numberFromSpec(spec, "targetTemperature"); ok {
-		m.TargetTemperature = types.Float64Value(v)
-	} else {
-		m.TargetTemperature = types.Float64Null()
+	var body ruleBodyModel
+	if err := body.applyReadback(ctx, spec); err != nil {
+		return err
 	}
-	if v, ok := numberFromSpec(spec, "priority"); ok {
-		m.Priority = types.Int64Value(int64(v))
-	} else {
-		m.Priority = types.Int64Null()
-	}
-
-	if rawSel, ok := spec["selector"].(map[string]any); ok && len(rawSel) > 0 {
-		sel := &selectorModel{
-			Agent:     strOrNull(specString(rawSel, "agent")),
-			Skill:     strOrNull(specString(rawSel, "skill")),
-			Project:   strOrNull(specString(rawSel, "project")),
-			Stage:     strOrNull(specString(rawSel, "stage")),
-			Purpose:   strOrNull(specString(rawSel, "purpose")),
-			ModelLane: strOrNull(specString(rawSel, "modelLane")),
-			Extra:     types.MapNull(types.StringType),
-		}
-		if rawExtra, ok := rawSel["extra"].(map[string]any); ok && len(rawExtra) > 0 {
-			elems := map[string]string{}
-			for k, v := range rawExtra {
-				if s, ok := v.(string); ok {
-					elems[k] = s
-				}
-			}
-			mv, diags := types.MapValueFrom(ctx, types.StringType, elems)
-			if diags.HasError() {
-				return errFromDiags(diags)
-			}
-			sel.Extra = mv
-		}
-		m.Selector = sel
-	} else {
-		m.Selector = nil
-	}
+	m.Selector = body.Selector
+	m.TargetModelID = body.TargetModelID
+	m.TargetTemperature = body.TargetTemperature
+	m.TargetReasoningEffort = body.TargetReasoningEffort
+	m.Priority = body.Priority
 	return nil
 }
 
