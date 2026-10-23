@@ -108,7 +108,8 @@ func (d *projectDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		}
 		var matches []client.Resource
 		for _, it := range items {
-			if it.ManagedKey == key {
+			// A null managedKey decodes to "" and never matches.
+			if it.ManagedKey != "" && it.ManagedKey == key {
 				matches = append(matches, it)
 			}
 		}

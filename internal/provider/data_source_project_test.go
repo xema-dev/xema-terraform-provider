@@ -45,13 +45,22 @@ func projectConfig(obj tftypes.Object, id, key *string) tftypes.Value {
 
 func strp(s string) *string { return &s }
 
-func readProject(t *testing.T, items []map[string]any, id, key *string) (datasource.ReadResponse, map[string]string, string) {
+func readProject(t *testing.T, items []map[string]any, id, key *string) (
+	datasource.ReadResponse, map[string]string, string) {
+	return readProjectWithByID(t, items, nil, id, key)
+}
+
+func readProjectWithByID(t *testing.T, items []map[string]any, byID map[string]any, id, key *string) (datasource.ReadResponse, map[string]string, string) {
 	t.Helper()
 	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/control-plane/resources/project" {
 			gotQuery = r.URL.Query().Get("managedKey")
 			_ = json.NewEncoder(w).Encode(items)
+			return
+		}
+		if byID != nil {
+			_ = json.NewEncoder(w).Encode(byID)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -133,5 +142,28 @@ func TestProjectDataSourceExactlyOneOfIDAndManagedKey(t *testing.T) {
 		if resp.Diagnostics.HasError() != tc.wantErr {
 			t.Errorf("%s: error=%v, want %v (%v)", tc.name, resp.Diagnostics.HasError(), tc.wantErr, resp.Diagnostics)
 		}
+	}
+}
+
+func TestProjectDataSourceNullManagedKey(t *testing.T) {
+	// List: a null-managedKey item is skipped, the matching one is returned.
+	items := []map[string]any{
+		{"physicalId": "p-0", "managedKey": nil, "spec": map[string]any{"name": "legacy"}},
+		{"physicalId": "p-1", "managedKey": "forge:gim", "spec": map[string]any{"name": "gim"}},
+	}
+	resp, out, _ := readProject(t, items, nil, strp("forge:gim"))
+	if resp.Diagnostics.HasError() || out["id"] != "p-1" {
+		t.Fatalf("diags=%v out=%v", resp.Diagnostics, out)
+	}
+	// ID lookup: null managedKey leaves managed_key null in state.
+	byID := map[string]any{"physicalId": "p-0", "managedKey": nil, "spec": map[string]any{"name": "legacy"}}
+	resp, _, _ = readProjectWithByID(t, nil, byID, strp("p-0"), nil)
+	if resp.Diagnostics.HasError() {
+		t.Fatal(resp.Diagnostics)
+	}
+	var got projectDataSourceModel
+	resp.Diagnostics.Append(resp.State.Get(context.Background(), &got)...)
+	if !got.ManagedKey.IsNull() || got.ID.ValueString() != "p-0" {
+		t.Fatalf("got %+v", got)
 	}
 }
