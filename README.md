@@ -82,7 +82,7 @@ into two stages (one state creates the org, a second takes `org` from its output
 
 ## Resources
 
-Each resource kind below has a matching data source (`data.xema_<kind>`) that reads by `id`.
+Each resource kind below has a matching data source (`data.xema_<kind>`) that reads by `id`. `data.xema_project` also accepts `managed_key` (exactly one of the two), e.g. `data "xema_project" "gim" { managed_key = "forge:gim" }`; it requires exactly one matching project in the org and errors on none or several.
 
 | Terraform                       | Kind                    | Backing service       |
 | ------------------------------- | ----------------------- | --------------------- |

@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"strings"
 )
 
@@ -211,6 +212,18 @@ func (c *Client) Read(ctx context.Context, kind, id string) (*Resource, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// ListByManagedKey lists resources of kind whose managed key is managedKey
+// (GET /control-plane/resources/<kind>?managedKey=<key>). The control plane
+// filters server-side; callers still verify each item's ManagedKey.
+func (c *Client) ListByManagedKey(ctx context.Context, kind, managedKey string) ([]Resource, error) {
+	var out []Resource
+	u := c.url(kind, "") + "?managedKey=" + neturl.QueryEscape(managedKey)
+	if err := c.doURL(ctx, http.MethodGet, u, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Update replaces the spec of a resource by physical id and returns the

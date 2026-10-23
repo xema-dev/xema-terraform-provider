@@ -134,6 +134,11 @@ data "xema_project" "lookup" {
   id = xema_project.demo.id
 }
 
+# A service-managed project is resolved by its managed key instead of an id.
+data "xema_project" "by_key" {
+  managed_key = "forge:gim"
+}
+
 output "demo_project_name" {
   value = data.xema_project.lookup.name
 }
