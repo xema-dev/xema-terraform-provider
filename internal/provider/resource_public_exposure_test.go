@@ -5,9 +5,13 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -124,3 +128,63 @@ func TestPublicExposureImportOnlyInstallation(t *testing.T) {
 		t.Fatal("import with an id other than installation must be refused")
 	}
 }
+
+func TestPublicExposureIsOrgScoped(t *testing.T) {
+	cfgResp := configureProvider(t, "http://unused.invalid", noOrg)
+	if cfgResp.Diagnostics.HasError() {
+		t.Fatalf("operator mode must configure without org: %v", cfgResp.Diagnostics)
+	}
+	ctx := context.Background()
+
+	rResp := &resource.ConfigureResponse{}
+	NewPublicExposureResource().(resource.ResourceWithConfigure).Configure(ctx, resource.ConfigureRequest{ProviderData: cfgResp.ResourceData}, rResp)
+	requireScopeDiagnostic(t, "xema_public_exposure", rResp.Diagnostics, true)
+
+	dResp := &datasource.ConfigureResponse{}
+	NewPublicExposureDataSource().(datasource.DataSourceWithConfigure).Configure(ctx, datasource.ConfigureRequest{ProviderData: cfgResp.DataSourceData}, dResp)
+	requireScopeDiagnostic(t, "data.xema_public_exposure", dResp.Diagnostics, true)
+}
+
+func TestPublicExposureRequestCarriesTheOrgHeader(t *testing.T) {
+	var calls []recordedCall
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, recordedCall{r.Method, r.URL.Path, r.Header.Get("X-Xema-Org-Id"), r.Header.Get("Authorization")})
+		if r.Method == http.MethodPost {
+			_ = json.NewEncoder(w).Encode(client.Handle{Kind: publicExposureKind, PhysicalID: publicExposureID, ManagedKey: publicExposureID})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(client.Resource{
+			Kind: publicExposureKind, PhysicalID: publicExposureID,
+			Spec:   map[string]any{"entries": []any{}},
+			Status: map[string]any{"configured": true, "revision": 1},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	cfgResp := configureProvider(t, srv.URL, someOrg)
+	if cfgResp.Diagnostics.HasError() {
+		t.Fatalf("org mode must configure: %v", cfgResp.Diagnostics)
+	}
+	ctx := context.Background()
+	r := &publicExposureResource{}
+	r.Configure(ctx, resource.ConfigureRequest{ProviderData: cfgResp.ResourceData}, &resource.ConfigureResponse{})
+	plan := publicExposureModel{Entries: []publicExposureEntryModel{}}
+	var diags testDiags
+	if !r.write(ctx, &plan, &diags) {
+		t.Fatalf("write failed: %v", diags)
+	}
+	if len(calls) != 2 || calls[0].method != http.MethodPost || calls[0].path != "/control-plane/resources/public-exposure" ||
+		calls[1].method != http.MethodGet || calls[1].path != "/control-plane/resources/public-exposure/installation" {
+		t.Fatalf("unexpected calls: %+v", calls)
+	}
+	for _, c := range calls {
+		if c.org != "org-123" || c.auth != "Bearer tok" {
+			t.Errorf("call must carry the org header and token: %+v", c)
+		}
+	}
+}
+
+// testDiags collects errors from write, which takes any AddError sink.
+type testDiags []string
+
+func (d *testDiags) AddError(summary, detail string) { *d = append(*d, summary+": "+detail) }
