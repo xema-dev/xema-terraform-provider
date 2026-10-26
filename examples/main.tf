@@ -84,6 +84,24 @@ resource "xema_org_model_default" "this" {
   model_id = xema_model.gpt4o_mini.id
 }
 
+# The installation's public exposure (installation owner only). Destroying it
+# leaves the installation setting as last written.
+resource "xema_public_exposure" "this" {
+  entries = [
+    {
+      host        = "api.example.com"
+      path_prefix = "/api"
+      select      = { kind = "all", deny = ["/billing/**"] }
+    },
+    {
+      host         = "example.com"
+      path_prefix  = "/api"
+      select       = { kind = "globs", allow = ["/users/*"] }
+      cors_origins = ["https://app.example.com"]
+    },
+  ]
+}
+
 # A custom org role (permission set).
 resource "xema_role" "kb_editor" {
   slug         = "kb-editor"

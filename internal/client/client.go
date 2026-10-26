@@ -101,6 +101,9 @@ type Resource struct {
 	PhysicalID string         `json:"physicalId"`
 	ManagedKey string         `json:"managedKey"`
 	Spec       map[string]any `json:"spec"`
+	// Status is the read-only, service-reported state of a kind that has one
+	// (absent for kinds that do not); it is never part of the declared spec.
+	Status map[string]any `json:"status,omitempty"`
 }
 
 // APIError is a non-2xx response from the control plane. The Code/Message are
