@@ -113,7 +113,7 @@ func (r *publicExposureResource) Schema(_ context.Context, _ resource.SchemaRequ
 }
 
 func (r *publicExposureResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	r.client = clientFromProviderData(req.ProviderData, operatorScoped, &resp.Diagnostics)
+	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (m publicExposureModel) toSpec() map[string]any {

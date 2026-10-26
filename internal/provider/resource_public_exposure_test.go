@@ -188,3 +188,27 @@ func TestPublicExposureRequestCarriesTheOrgHeader(t *testing.T) {
 type testDiags []string
 
 func (d *testDiags) AddError(summary, detail string) { *d = append(*d, summary+": "+detail) }
+
+func TestPublicExposureEmptyListsStayEmpty(t *testing.T) {
+	spec := map[string]any{"entries": []any{
+		map[string]any{
+			"host": "h", "pathPrefix": "/api",
+			"select":      map[string]any{"kind": "all", "deny": []any{}},
+			"corsOrigins": []any{},
+		},
+	}}
+	var m publicExposureModel
+	if err := m.applyReadback(&client.Resource{Spec: spec, Status: map[string]any{"configured": true, "revision": float64(1)}}); err != nil {
+		t.Fatal(err)
+	}
+	e := m.Entries[0]
+	if e.CorsOrigins.IsNull() || len(e.CorsOrigins.Elements()) != 0 || e.Select.Deny.IsNull() || len(e.Select.Deny.Elements()) != 0 {
+		t.Fatalf("empty lists must read back empty, not null: %#v", e)
+	}
+	if !e.Select.Biomes.IsNull() {
+		t.Fatalf("an absent list must read back null")
+	}
+	if !reflect.DeepEqual(m.toSpec(), spec) {
+		t.Fatalf("empty lists must be sent as empty: %#v", m.toSpec())
+	}
+}
