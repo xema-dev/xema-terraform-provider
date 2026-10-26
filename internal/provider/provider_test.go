@@ -117,7 +117,7 @@ func TestResourceSchemasValid(t *testing.T) {
 	}
 
 	if got := len(xp.DataSources(context.Background())); got != 18 {
-		t.Fatalf("expected 17 data sources, got %d", got)
+		t.Fatalf("expected 18 data sources, got %d", got)
 	}
 }
 

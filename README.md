@@ -124,7 +124,7 @@ or key-order differences never show as drift.
 > **`xema_model_resolution_rule`**, which declares an org-level rule only.
 > **`xema_org_model_default`** is the organization's one default model: one per
 > org, set by `model_id`, and destroying it unsets the default.
-> **`xema_public_exposure`** is the installation's one public-exposure setting
+> **`xema_public_exposure`** (and `data.xema_public_exposure`, which takes no `id`) is the installation's one public-exposure setting
 > (id `installation`; import with that id): the hosts and path prefixes that
 > expose public operations, and their CORS origins. Only the installation owner
 > may write it (403 otherwise). The declared `entries` replace the whole

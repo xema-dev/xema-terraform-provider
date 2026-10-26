@@ -150,6 +150,7 @@ func (p *xemaProvider) DataSources(_ context.Context) []func() datasource.DataSo
 		NewModelResolutionRuleDataSource,
 		NewModelStrategyDataSource,
 		NewOrgModelDefaultDataSource,
+		NewPublicExposureDataSource,
 		NewAgentDataSource,
 		NewSkillDataSource,
 		NewRoleDataSource,
