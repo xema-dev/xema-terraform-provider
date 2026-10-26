@@ -103,6 +103,7 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_deliverable_spec`         | `deliverable-spec`      | deliverable-specs-api |
 | `xema_biome_install`            | `biome-install`         | biome-host-api        |
 | `xema_portal`                   | `portal`                | app-runtime-api       |
+| `xema_public_exposure`          | `public-exposure`       | biome-host-api        |
 
 Opaque object/array fields (e.g. `metadata`, `config_json`, `branding`,
 `lockfile`, `integrations`, `resources`, `access_grants`) are typed as
@@ -123,6 +124,13 @@ or key-order differences never show as drift.
 > **`xema_model_resolution_rule`**, which declares an org-level rule only.
 > **`xema_org_model_default`** is the organization's one default model: one per
 > org, set by `model_id`, and destroying it unsets the default.
+> **`xema_public_exposure`** is the installation's one public-exposure setting
+> (id `installation`; import with that id): the hosts and path prefixes that
+> expose public operations, and their CORS origins. Only the installation owner
+> may write it (403 otherwise). The declared `entries` replace the whole
+> document, an unchanged document writes nothing, and `revision` / `configured`
+> are read-only. Destroying it only stops Terraform managing the setting: the
+> installation's exposure is left as last written, never reset.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field.
 > **`xema_space`** updates `classification` in place; changing `ref`,
