@@ -138,8 +138,9 @@ or key-order differences never show as drift.
 > classification-only).
 
 > **Note on `xema_provider.api_key`:** the API key is write-only — the control
-> plane never returns it on read, so it is not drift-detected. Secrets never
-> round-trip through the control plane.
+> plane never returns it on read, so it is not drift-detected. It enrols the
+> key as the organisation's default credential for the provider's endpoint; the
+> platform seals it and never stores it on the provider.
 
 Every kind also has a matching **data source** (`data.xema_<kind>`) for
 read-by-id lookups: the `id` is the only input and every spec field is exposed
