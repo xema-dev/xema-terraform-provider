@@ -69,6 +69,9 @@ func (r *skillResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			"slug": schema.StringAttribute{
 				Required:    true,
 				Description: "Skill slug (hierarchical path). Immutable natural key.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"name": schema.StringAttribute{
 				Required:    true,
@@ -81,10 +84,16 @@ func (r *skillResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			"scope": schema.StringAttribute{
 				Required:    true,
 				Description: "SkillScope enum value (e.g. system, biome, org, project, user).",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"kind": schema.StringAttribute{
 				Required:    true,
 				Description: "SkillSourceKind enum value (e.g. biome, authored, git_repo).",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"injection_mode": schema.StringAttribute{
 				Required:    true,
@@ -92,22 +101,30 @@ func (r *skillResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"category": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Free-form skill category.",
 			},
 			"parent_slug": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Parent skill slug for hierarchical (sub-)skills.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplaceIfConfigured(),
+				},
 			},
 			"version": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Skill version.",
 			},
 			"skill_markdown": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "SKILL.md content body.",
 			},
 			"tags": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Free-form tags.",
 			},

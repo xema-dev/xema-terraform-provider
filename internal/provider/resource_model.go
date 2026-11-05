@@ -65,10 +65,16 @@ func (r *modelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			"provider_id": schema.StringAttribute{
 				Required:    true,
 				Description: "LLM provider id.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"model_id": schema.StringAttribute{
 				Required:    true,
 				Description: "Provider-specific model id.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"display_name": schema.StringAttribute{
 				Required:    true,
@@ -76,15 +82,18 @@ func (r *modelResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"context_window": schema.Int64Attribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Model context window size, in tokens.",
 			},
 			"capabilities": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Model capabilities.",
 			},
 			"modalities": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Model modalities.",
 			},

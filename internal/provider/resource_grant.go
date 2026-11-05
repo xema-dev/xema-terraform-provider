@@ -69,14 +69,23 @@ func (r *grantResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			"subject_kind": schema.StringAttribute{
 				Required:    true,
 				Description: "Kind of the subject the grant binds (e.g. user, service, agent).",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"subject_ref": schema.StringAttribute{
 				Required:    true,
 				Description: "Reference (slug/id) of the subject the grant binds.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"capability": schema.StringAttribute{
 				Required:    true,
 				Description: "Capability ref the grant authorizes.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"environment": schema.StringAttribute{
 				Required:    true,
@@ -88,14 +97,17 @@ func (r *grantResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"requires_approval": schema.BoolAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Whether invocations under this grant require approval.",
 			},
 			"profile": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Optional authorization profile applied to the grant.",
 			},
 			"constraints": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional constraints as a JSON object.",
 			},
