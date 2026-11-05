@@ -20,9 +20,11 @@ import (
 // configuration leaves null that the server then fills is otherwise refused by
 // Terraform as an inconsistent result after apply.
 var notServerFilled = map[string]string{
-	"xema_provider.api_key":    "write-only secret: the API never returns it",
-	"xema_grant.resource_glob": "retired: the control plane refuses a declaration carrying it",
-	"xema_portal.subdomain":    "retired: the control plane refuses a declaration carrying it",
+	"xema_provider.api_key":                              "write-only secret: the API never returns it",
+	"xema_grant.resource_glob":                           "retired: the control plane refuses a declaration carrying it",
+	"xema_portal.subdomain":                              "retired: the control plane refuses a declaration carrying it",
+	"xema_model_resolution_rule.target_temperature":      "the rule's author sets it: the server stores what it is given, else null, and fills no default",
+	"xema_model_resolution_rule.target_reasoning_effort": "the rule's author sets it: the server stores what it is given, else null, and fills no default",
 }
 
 func resourceSchemas(t *testing.T) map[string]schema.Schema {
