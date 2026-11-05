@@ -73,10 +73,12 @@ func (r *orgResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 			},
 			"domain": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Optional org domain (unique within the realm).",
 			},
 			"metadata": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional free-form metadata as a JSON object.",
 			},

@@ -77,10 +77,12 @@ func (r *spaceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"classification": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Optional space classification. The only field updatable in place.",
 			},
 			"labels": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional free-form labels as a JSON object. Create-only; changing it forces replacement.",
 				PlanModifiers: []planmodifier.String{

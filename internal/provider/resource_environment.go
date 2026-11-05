@@ -65,27 +65,37 @@ func (r *environmentResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"slug": schema.StringAttribute{
 				Required:    true,
 				Description: "Environment slug (the control-plane physical id). Immutable natural key.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"kind": schema.StringAttribute{
 				Required:    true,
 				Description: "Execution environment kind.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"description": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Free-form environment description.",
 			},
 			"allowed_capabilities": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Capability refs allowed within this environment.",
 			},
 			"approval_rules": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional approval rules as a JSON object or array.",
 			},
 			"runtime_limits": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional runtime limits as a JSON object.",
 			},

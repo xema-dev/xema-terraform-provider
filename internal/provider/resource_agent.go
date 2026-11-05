@@ -87,14 +87,17 @@ func (r *agentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"description": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Free-form agent description.",
 			},
 			"capability": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Optional capability ref exposed by this agent.",
 			},
 			"workspace": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional workspace configuration as a JSON object.",
 			},

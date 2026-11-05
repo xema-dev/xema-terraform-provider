@@ -72,6 +72,9 @@ func (r *portalResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"slug": schema.StringAttribute{
 				Required:    true,
 				Description: "Portal slug. Immutable natural key.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"display_name": schema.StringAttribute{
 				Required:    true,
@@ -103,6 +106,7 @@ func (r *portalResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			},
 			"default_audience": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Optional default audience for the portal.",
 			},
 			"subdomain": schema.StringAttribute{
@@ -111,15 +115,18 @@ func (r *portalResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			},
 			"subdomain_enabled": schema.BoolAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Whether the subdomain is enabled.",
 			},
 			"access_grants": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				CustomType:  jsontypes.NormalizedType{},
 				Description: "Optional access grants as a JSON array.",
 			},
 			"archived": schema.BoolAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Whether the portal is archived.",
 			},
 		},

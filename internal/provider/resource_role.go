@@ -62,6 +62,9 @@ func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"slug": schema.StringAttribute{
 				Required:    true,
 				Description: "Role slug (org-unique, kebab-case). Immutable natural key.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
 			},
 			"display_name": schema.StringAttribute{
 				Required:    true,
@@ -69,6 +72,7 @@ func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			},
 			"description": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Free-form role description.",
 			},
 		},
@@ -109,6 +113,13 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 	plan.ID = types.StringValue(handle.PhysicalID)
+
+	res, err := r.client.Read(ctx, roleKind, handle.PhysicalID)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to read role after create", err.Error())
+		return
+	}
+	plan.applyReadback(res.Spec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

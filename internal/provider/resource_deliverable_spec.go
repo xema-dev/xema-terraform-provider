@@ -93,40 +93,49 @@ func (r *deliverableSpecResource) Schema(_ context.Context, _ resource.SchemaReq
 			},
 			"description": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Free-form deliverable-spec description.",
 			},
 			"complexity": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Deliverable-spec complexity.",
 			},
 			"content": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Deliverable-spec content body.",
 			},
 			"zod_schema_source": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Zod schema source for the deliverable spec.",
 			},
 			"versioning_mode": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Versioning mode (append | new | replace).",
 			},
 			"multi_page": schema.BoolAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Whether the deliverable is multi-page.",
 			},
 			"tags": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Free-form tags.",
 			},
 			"phases": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Pipeline phases this spec applies to.",
 			},
 			"work_types": schema.ListAttribute{
 				Optional:    true,
+				Computed:    true,
 				ElementType: types.StringType,
 				Description: "Work types this spec applies to.",
 			},

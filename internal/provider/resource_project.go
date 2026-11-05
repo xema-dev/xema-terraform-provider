@@ -63,6 +63,7 @@ func (r *projectResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			},
 			"description": schema.StringAttribute{
 				Optional:    true,
+				Computed:    true,
 				Description: "Human-readable project description.",
 			},
 		},
@@ -94,6 +95,14 @@ func (r *projectResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 	plan.ID = types.StringValue(handle.PhysicalID)
+
+	res, err := r.client.Read(ctx, projectKind, handle.PhysicalID)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to read project after create", err.Error())
+		return
+	}
+	plan.Name = types.StringValue(specString(res.Spec, "name"))
+	plan.Description = strOrNull(specString(res.Spec, "description"))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
