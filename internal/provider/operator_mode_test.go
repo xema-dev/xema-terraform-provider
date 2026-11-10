@@ -5,7 +5,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,11 +32,11 @@ func fakeControlPlane(t *testing.T, calls *[]recordedCall) *httptest.Server {
 		*calls = append(*calls, recordedCall{r.Method, r.URL.Path, r.Header.Get("X-Xema-Org-Id"), r.Header.Get("Authorization")})
 		switch r.Method {
 		case http.MethodPost:
-			_ = json.NewEncoder(w).Encode(client.Handle{Kind: "org", PhysicalID: "org-new", ManagedKey: "acme"})
+			writeData(w, client.Handle{Kind: "org", PhysicalID: "org-new", ManagedKey: "acme"})
 		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			_ = json.NewEncoder(w).Encode(client.Resource{Kind: "org", PhysicalID: "org-new", Spec: spec})
+			writeData(w, client.Resource{Kind: "org", PhysicalID: "org-new", Spec: spec})
 		}
 	}))
 	t.Cleanup(srv.Close)

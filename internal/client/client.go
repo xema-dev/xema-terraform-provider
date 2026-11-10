@@ -12,6 +12,9 @@
 //	PUT    /control-plane/resources/:kind/:id       -> update
 //	DELETE /control-plane/resources/:kind/:id       -> delete
 //
+// Every success response is wrapped as {"data": <payload>} (list: an array
+// payload); the client unwraps it in one place, doURL.
+//
 // Every org-scoped request carries an org-admin bearer token and the canonical
 // X-Xema-Org-Id tenant header. The control plane derives the authoritative org
 // from the verified token; the header is sent for tenant routing parity. For
@@ -185,9 +188,30 @@ func (c *Client) doURL(ctx context.Context, method, url string, body any, out an
 	}
 
 	if out != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("decode response: %w", err)
-		}
+		return decodeData(raw, out)
+	}
+	return nil
+}
+
+// dataEnvelope is the success envelope every control-plane-api route answers
+// with: {"data": <payload>}. Errors are not enveloped (see APIError).
+type dataEnvelope struct {
+	Data json.RawMessage `json:"data"`
+}
+
+// decodeData unwraps the control-plane success envelope into out. A body with no
+// `data` member is refused: a bare payload would otherwise decode to empty
+// fields and taint state silently.
+func decodeData(raw []byte, out any) error {
+	var env dataEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fmt.Errorf("decode response envelope: %w", err)
+	}
+	if len(env.Data) == 0 {
+		return fmt.Errorf("decode response: missing the {\"data\": ...} envelope")
+	}
+	if err := json.Unmarshal(env.Data, out); err != nil {
+		return fmt.Errorf("decode response data: %w", err)
 	}
 	return nil
 }
