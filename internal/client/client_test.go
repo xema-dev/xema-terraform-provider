@@ -18,7 +18,7 @@ func TestCreateSendsAuthAndOrgHeaders(t *testing.T) {
 		gotOrg = r.Header.Get("X-Xema-Org-Id")
 		gotPath = r.URL.Path
 		gotMethod = r.Method
-		_ = json.NewEncoder(w).Encode(Handle{Kind: "project", PhysicalID: "p-1", ManagedKey: "demo"})
+		writeData(w, Handle{Kind: "project", PhysicalID: "p-1", ManagedKey: "demo"})
 	}))
 	defer srv.Close()
 
@@ -92,11 +92,11 @@ func TestInstallationOrgMethodsUseInstallationPaths(t *testing.T) {
 		calls = append(calls, call{r.Method, r.URL.Path, org, r.Header.Get("Authorization")})
 		switch r.Method {
 		case http.MethodPost:
-			_ = json.NewEncoder(w).Encode(Handle{Kind: "org", PhysicalID: "o-1", ManagedKey: "acme"})
+			writeData(w, Handle{Kind: "org", PhysicalID: "o-1", ManagedKey: "acme"})
 		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+			writeData(w, Resource{Kind: "org", PhysicalID: "o-1"})
 		}
 	}))
 	defer srv.Close()
@@ -137,7 +137,7 @@ func TestOrgScopedCallsStillSendOrgHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotOrg = r.Header.Get("X-Xema-Org-Id")
 		gotPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+		writeData(w, Resource{Kind: "org", PhysicalID: "o-1"})
 	}))
 	defer srv.Close()
 
@@ -147,5 +147,38 @@ func TestOrgScopedCallsStillSendOrgHeader(t *testing.T) {
 	}
 	if gotOrg != "org-123" || gotPath != "/control-plane/resources/org/o-1" {
 		t.Errorf("org=%q path=%q", gotOrg, gotPath)
+	}
+}
+
+// writeData answers as control-plane-api does: the payload under {"data": ...}.
+func writeData(w http.ResponseWriter, payload any) {
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": payload})
+}
+
+func TestBareBodyIsRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	if _, err := c.Read(context.Background(), "org", "o-1"); err == nil {
+		t.Fatal("a body without the data envelope must be an error, not empty fields")
+	}
+}
+
+func TestListUnwrapsTheDataArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeData(w, []Resource{{Kind: "project", PhysicalID: "p-1", ManagedKey: "demo"}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	got, err := c.ListByManagedKey(context.Background(), "project", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].PhysicalID != "p-1" {
+		t.Fatalf("list = %+v", got)
 	}
 }
