@@ -92,6 +92,7 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_model_strategy`           | `model-strategy`        | llm-registry-api      |
 | `xema_model_resolution_rule`    | `model-resolution-rule` | llm-registry-api      |
 | `xema_org_model_default`        | `org-model-default`     | llm-registry-api      |
+| `xema_directory_binding`        | `directory-binding`     | identity-api          |
 | `xema_agent`                    | `agent`                 | llm-registry-api      |
 | `xema_skill`                    | `skill`                 | skill-registry-api    |
 | `xema_role`                     | `role`                  | authorization-api     |
@@ -124,6 +125,12 @@ or key-order differences never show as drift.
 > **`xema_model_resolution_rule`**, which declares an org-level rule only.
 > **`xema_org_model_default`** is the organization's one default model: one per
 > org, set by `model_id`, and destroying it unsets the default.
+> **`xema_directory_binding`** is the organization's one external-directory binding
+> (id is the org id; import with it): `provider_ref`, `application_client_id`, a
+> `member_claim` (`GROUP` or `APP_ROLE`, with at least one value) and an optional
+> `role_map` of claim value to org role (`org_owner`, `org_admin`, `org_member`).
+> Any change updates it in place; an empty `role_map` reads as unset, and
+> destroying it removes the binding but leaves memberships untouched.
 > **`xema_public_exposure`** (and `data.xema_public_exposure`, which takes no `id`) is the installation's one public-exposure setting
 > (id `installation`; import with that id): the hosts and path prefixes that
 > expose public operations, and their CORS origins. Only the installation owner
