@@ -84,6 +84,22 @@ resource "xema_org_model_default" "this" {
   model_id = xema_model.gpt4o_mini.id
 }
 
+# The organization's external directory binding: members are the holders of the
+# claim values, and each value maps to an org role.
+resource "xema_directory_binding" "this" {
+  provider_ref          = "entra:00000000-0000-0000-0000-000000000000"
+  application_client_id = "11111111-1111-1111-1111-111111111111"
+
+  member_claim = {
+    kind   = "GROUP"
+    values = ["22222222-2222-2222-2222-222222222222"]
+  }
+
+  role_map = [
+    { value = "22222222-2222-2222-2222-222222222222", org_role = "org_member" },
+  ]
+}
+
 # The installation's public exposure (installation owner only). Destroying it
 # leaves the installation setting as last written.
 resource "xema_public_exposure" "this" {
