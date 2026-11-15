@@ -5,6 +5,7 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  merge_group:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -41,3 +42,13 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
+
+  # The one required check of the develop rulesets (XEMA-7710): green only when every job above is green.
+  required:
+    name: ci/required
+    needs: [ci]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.ci.result }}" = success
