@@ -239,7 +239,8 @@ func (m directoryBindingModel) toSpec() map[string]any {
 	return spec
 }
 
-func (m *directoryBindingModel) applyReadback(spec map[string]any) {
+func (m *directoryBindingModel) applyReadback(res *client.Resource) {
+	spec := res.Spec
 	m.ProviderRef = types.StringValue(specString(spec, "providerRef"))
 	m.ApplicationClientID = types.StringValue(specString(spec, "applicationClientId"))
 
@@ -277,7 +278,8 @@ func (m *directoryBindingModel) applyReadback(spec map[string]any) {
 	}
 
 	m.SCIMCredentialID = strOrNull(specString(spec, "scimCredentialId"))
-	m.Authority = strOrNull(specString(spec, "authority"))
+	// The authority is derived by the server and reported in status, never in spec (XEMA-7929).
+	m.Authority = strOrNull(specString(res.Status, "authority"))
 }
 
 func (r *directoryBindingResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -299,7 +301,7 @@ func (r *directoryBindingResource) Create(ctx context.Context, req resource.Crea
 		resp.Diagnostics.AddError("Failed to read directory binding after create", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec)
+	plan.applyReadback(res)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -319,7 +321,7 @@ func (r *directoryBindingResource) Read(ctx context.Context, req resource.ReadRe
 		resp.Diagnostics.AddError("Failed to read directory binding", err.Error())
 		return
 	}
-	state.applyReadback(res.Spec)
+	state.applyReadback(res)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -335,7 +337,7 @@ func (r *directoryBindingResource) Update(ctx context.Context, req resource.Upda
 		resp.Diagnostics.AddError("Failed to update directory binding", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec)
+	plan.applyReadback(res)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
