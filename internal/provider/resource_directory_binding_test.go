@@ -28,13 +28,13 @@ type directoryBindingServer struct {
 
 // fakeDirectoryBindingControlPlane stores the spec it is sent and reads it back
 // the way identity-api does: an absent roleMap comes back as an empty list, and
-// `authority` is reported by the server.
+// `authority` is reported by the server in status, never in spec.
 func fakeDirectoryBindingControlPlane(t *testing.T) *directoryBindingServer {
 	t.Helper()
 	const base = "/control-plane/resources/directory-binding"
 	fake := &directoryBindingServer{}
 	readSpec := func() map[string]any {
-		out := map[string]any{"authority": "claims"}
+		out := map[string]any{}
 		for k, v := range fake.sent {
 			out[k] = v
 		}
@@ -62,7 +62,7 @@ func fakeDirectoryBindingControlPlane(t *testing.T) *directoryBindingServer {
 			fake.deleted = true
 			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == base+"/org-1":
-			writeData(w, map[string]any{"kind": "directory-binding", "physicalId": "org-1", "managedKey": "default", "spec": readSpec()})
+			writeData(w, map[string]any{"kind": "directory-binding", "physicalId": "org-1", "managedKey": "default", "spec": readSpec(), "status": map[string]any{"authority": "claims"}})
 		default:
 			http.NotFound(w, r)
 		}

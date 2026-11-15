@@ -106,6 +106,6 @@ func (d *directoryBindingDataSource) Read(ctx context.Context, req datasource.Re
 		resp.Diagnostics.AddError("Failed to read directory binding", err.Error())
 		return
 	}
-	data.applyReadback(res.Spec)
+	data.applyReadback(res)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
