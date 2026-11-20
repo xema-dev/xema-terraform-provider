@@ -175,11 +175,18 @@ resource "xema_deliverable_spec" "adr" {
 }
 
 # An org-scoped biome installation (projectId null; version is service-managed).
+# accept_permissions consents to the grant set the install plan shows; unset, an
+# install whose plan needs consent is refused before it runs. It acts only when
+# the install is created. Run from a pipeline, the provider's token can be the
+# pipeline's own service-principal token (with `org` set): that service must
+# hold `biome:install@1` in the org to be admitted at all, and the
+# consent-decide role assigned above to give consent.
 resource "xema_biome_install" "slack" {
-  biome_id     = "slack-connector"
-  config_json  = jsonencode({ defaultChannel = "#general" })
-  connections = jsonencode([{ adapterKind = "chat", orgConnectionId = "oi_123" }])
-  resources    = jsonencode([{ adapterKind = "chat", selector = { team = "platform" } }])
+  biome_id           = "slack-connector"
+  config_json        = jsonencode({ defaultChannel = "#general" })
+  connections        = jsonencode([{ adapterKind = "chat", orgConnectionId = "oi_123" }])
+  resources          = jsonencode([{ adapterKind = "chat", selector = { team = "platform" } }])
+  accept_permissions = true
 }
 
 # An org portal (an org-scoped app). Opaque blobs are normalized JSON.

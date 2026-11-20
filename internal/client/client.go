@@ -116,7 +116,10 @@ type APIError struct {
 	Status  int
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	body    string
+	// Reason is the typed stop reason an error carries when it has one (a
+	// biome install's refused consent names why it stopped); empty otherwise.
+	Reason string `json:"reason"`
+	body   string
 }
 
 func (e *APIError) Error() string {
@@ -313,6 +316,16 @@ func IsNotFound(err error) bool {
 		apiErr = e
 	}
 	return apiErr != nil && apiErr.Status == http.StatusNotFound
+}
+
+// AsAPIError returns the control-plane error carrying code, or nil when err is
+// not one.
+func AsAPIError(err error, code string) *APIError {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == code {
+		return apiErr
+	}
+	return nil
 }
 
 // IsConflict reports whether err is an APIError with a 409 status, which the
