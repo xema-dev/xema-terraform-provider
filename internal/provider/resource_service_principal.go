@@ -173,9 +173,8 @@ func (r *servicePrincipalResource) Schema(_ context.Context, _ resource.SchemaRe
 				Description: "The OAuth client id.",
 			},
 			"token_endpoint": schema.StringAttribute{
-				Computed:      true,
-				Description:   "The OAuth token endpoint the client id and secret authenticate against.",
-				PlanModifiers: keep,
+				Computed:    true,
+				Description: "The OAuth token endpoint the client id and secret authenticate against. Null after import until the first rotation.",
 			},
 			"credential_revision": schema.StringAttribute{
 				Computed:    true,
@@ -225,6 +224,13 @@ func (r *servicePrincipalResource) ModifyPlan(ctx context.Context, req resource.
 	}
 	set("client_secret", state.ClientSecret)
 	set("client_id", state.ClientID)
+	// The read reports no token endpoint, so an imported principal holds none:
+	// keep that null, but let a rotation (which answers one) fill it.
+	if rotating && state.TokenEndpoint.IsNull() {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("token_endpoint"), types.StringUnknown())...)
+	} else {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("token_endpoint"), state.TokenEndpoint)...)
+	}
 	set("credential_revision", state.CredentialRevision)
 }
 
@@ -239,7 +245,8 @@ func (m servicePrincipalModel) toSpec() map[string]any {
 	return spec
 }
 
-// statusString reads a status field the service reports as a string or a number.
+// statusString reads a status field the service reports as a string or a JSON
+// number (credentialRevision is a number there); a number becomes its integer string.
 func statusString(status map[string]any, key string) string {
 	switch v := status[key].(type) {
 	case string:
@@ -404,7 +411,10 @@ func (r *servicePrincipalResource) Update(ctx context.Context, req resource.Upda
 	if rotated.ClientID == "" {
 		plan.ClientID = state.ClientID
 	}
-	plan.CredentialRevision = types.StringValue(rotated.CredentialRevision)
+	plan.CredentialRevision = types.StringValue(strconv.FormatInt(rotated.CredentialRevision, 10))
+	if plan.TokenEndpoint.IsUnknown() {
+		plan.TokenEndpoint = strOrNull(rotated.TokenEndpoint)
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

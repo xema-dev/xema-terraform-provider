@@ -293,7 +293,7 @@ func (c *Client) Delete(ctx context.Context, kind, id string) error {
 // ClientSecret is a secret delivered once; Replayed is true when the service
 // answered an idempotent replay (in which case it holds no secret).
 type RotatedCredential struct {
-	CredentialRevision string `json:"credentialRevision"`
+	CredentialRevision int64  `json:"credentialRevision"`
 	ClientID           string `json:"clientId"`
 	TokenEndpoint      string `json:"tokenEndpoint"`
 	ClientSecret       string `json:"clientSecret"`

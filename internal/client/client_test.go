@@ -216,7 +216,7 @@ func TestRotateServicePrincipalCredential(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		writeData(w, map[string]any{
-			"credentialRevision": "2", "clientId": "cid", "tokenEndpoint": "https://t/token",
+			"credentialRevision": 2, "clientId": "cid", "tokenEndpoint": "https://t/token",
 			"clientSecret": "new-secret", "replayed": false,
 		})
 	}))
@@ -236,7 +236,7 @@ func TestRotateServicePrincipalCredential(t *testing.T) {
 	if gotBody["overlapSeconds"] != float64(300) {
 		t.Errorf("body = %#v", gotBody)
 	}
-	if got.ClientSecret != "new-secret" || got.CredentialRevision != "2" || got.ClientID != "cid" ||
+	if got.ClientSecret != "new-secret" || got.CredentialRevision != 2 || got.ClientID != "cid" ||
 		got.TokenEndpoint != "https://t/token" || got.Replayed {
 		t.Errorf("rotated = %+v", got)
 	}

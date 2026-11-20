@@ -73,7 +73,7 @@ func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 			fake.rotationBodies = append(fake.rotationBodies, body)
 			revision++
 			out := map[string]any{
-				"credentialRevision": string(rune('0' + revision)), "clientId": "cid-1", "tokenEndpoint": "https://t/token", "replayed": false,
+				"credentialRevision": revision, "clientId": "cid-1", "tokenEndpoint": "https://t/token", "replayed": false,
 			}
 			if !fake.omitSecret {
 				out["clientSecret"] = "secret-" + string(rune('0'+revision))
@@ -96,7 +96,7 @@ func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 				return
 			}
 			status := map[string]any{
-				"state": p["state"], "credentialRevision": string(rune('0' + revision)), "clientId": "cid-1", "tokenEndpoint": "https://t/token",
+				"state": p["state"], "credentialRevision": revision, "clientId": "cid-1",
 			}
 			if fake.secretOnRead {
 				status["clientSecret"] = "must-never-be-used"
@@ -222,6 +222,26 @@ func TestServicePrincipalReadNeverSetsTheSecret(t *testing.T) {
 	}
 	if got := readSP(t, readResp.State); got.ClientSecret.ValueString() != "secret-1" {
 		t.Errorf("client_secret = %s, want the stored secret-1", got.ClientSecret)
+	}
+}
+
+func TestServicePrincipalNumericStatusRevisionLandsInState(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	r, createResp := createServicePrincipal(t, fake, "")
+	// A rotation done elsewhere advances the revision the read reports, as a JSON number.
+	rotated, err := r.client.RotateServicePrincipalCredential(context.Background(), "sp-1", 300, "other-key")
+	if err != nil || rotated.CredentialRevision != 2 {
+		t.Fatalf("rotate: %+v %v", rotated, err)
+	}
+	readResp := resource.ReadResponse{State: createResp.State}
+	r.Read(context.Background(), resource.ReadRequest{State: createResp.State}, &readResp)
+	if readResp.Diagnostics.HasError() {
+		t.Fatalf("read: %v", readResp.Diagnostics)
+	}
+	got := readSP(t, readResp.State)
+	if got.CredentialRevision.ValueString() != "2" || got.TokenEndpoint.ValueString() != "https://t/token" ||
+		got.ClientSecret.ValueString() != "secret-1" {
+		t.Errorf("unexpected state: %#v", got)
 	}
 }
 
