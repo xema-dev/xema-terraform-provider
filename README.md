@@ -178,8 +178,18 @@ or key-order differences never show as drift.
 > refused before it runs (`CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED`, with its
 > stop reason), and the error says to set `accept_permissions = true`. A grant
 > set that changed since it was planned is never approved unseen; review it and
-> apply again. The same code without a stop reason means the install ran but the
-> consent its run asked for afterwards was not given; the error says so.
+> apply again. The refusal's `stage` says whether the install ran: `after-run`
+> (or the reason `after-run-consent-not-given`) means its installation exists
+> but is unconfigured, and the error says to import or remove it; with no stage
+> (an older control plane) the outcome is unknown, so check whether the
+> installation exists. Reasons name their remedy: `not-authorized` (give the
+> credential a role holding `authorization:installation-consent.decide@1`),
+> `installation-read-not-authorized` (allow it to read the org's biome
+> installations on Biome Host), `not-authenticated` (renew the token),
+> `unavailable` (retry), and a consent that moved or was settled (apply again);
+> any other reason is quoted as sent.
+> `CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED` (502) is a consent
+> refusal control-plane could not map: report it; its stage reads the same way.
 > `accept_permissions` acts only when the install is created: changing it on an
 > existing install updates nothing. It is intent only: it is never read back, so
 > it never reads as drift, an import leaves it unset, and changing it never
