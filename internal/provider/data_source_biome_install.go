@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/xema-dev/xema-terraform-provider/internal/client"
 )
@@ -62,12 +63,23 @@ func (d *biomeInstallDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 	}
 }
 
+// biomeInstallDataModel is the read-back view of a biome install: what the
+// server reports, without the resource's `accept_permissions` intent, which is
+// never read back.
+type biomeInstallDataModel struct {
+	ID          types.String         `tfsdk:"id"`
+	BiomeID     types.String         `tfsdk:"biome_id"`
+	ConfigJson  jsontypes.Normalized `tfsdk:"config_json"`
+	Connections jsontypes.Normalized `tfsdk:"connections"`
+	Resources   jsontypes.Normalized `tfsdk:"resources"`
+}
+
 func (d *biomeInstallDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	d.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
 func (d *biomeInstallDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data biomeInstallModel
+	var data biomeInstallDataModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -78,6 +90,6 @@ func (d *biomeInstallDataSource) Read(ctx context.Context, req datasource.ReadRe
 		resp.Diagnostics.AddError("Failed to read biome_install", err.Error())
 		return
 	}
-	data.applyReadback(res.Spec)
+	data.BiomeID, data.ConfigJson, data.Connections, data.Resources = biomeInstallReadback(res.Spec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

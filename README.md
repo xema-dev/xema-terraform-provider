@@ -16,7 +16,7 @@ fallback.
 | ---------- | ---------------- | --------------------------------------------- |
 | `endpoint` | `XEMA_ENDPOINT`  | Control-plane-api base URL.                   |
 | `org`      | `XEMA_ORG`       | Xema organization id (optional; omit for operator mode). |
-| `token`    | `XEMA_TOKEN`     | Bearer token (sensitive): org-admin, or platform-admin in operator mode. |
+| `token`    | `XEMA_TOKEN`     | Bearer token (sensitive): org-admin, or platform-admin in operator mode. A pipeline's own service-principal token works for `xema_biome_install` (see below). |
 
 ```hcl
 terraform {
@@ -31,6 +31,31 @@ provider "xema" {
   endpoint = "https://control-plane.xema.dev"
   org      = "org_123"
   token    = var.xema_token
+}
+```
+
+### A pipeline's service-principal token
+
+A pipeline can apply `xema_biome_install` with its own service-principal token
+instead of a person's: set `org` (the provider sends it as `X-Xema-Org-Id`) and
+pass the token through `XEMA_TOKEN` from the pipeline's secret store, never in
+the configuration. The control plane admits it for biome installs only; every
+other kind still needs an org-admin person token, and assigning roles refuses a
+service token by design. To give consent (`accept_permissions = true`), the
+service must hold, in that org, a role granting
+`authorization:installation-consent.decide@1`; an org admin declares that role
+and its `xema_role_assignment` once, with a person's credential.
+
+```hcl
+# In the pipeline: XEMA_ENDPOINT, XEMA_ORG and XEMA_TOKEN (the service token) come from the environment.
+provider "xema" {}
+
+resource "xema_biome_install" "slack" {
+  biome_id           = "slack-connector"
+  config_json        = jsonencode({})
+  connections        = jsonencode([])
+  resources          = jsonencode([])
+  accept_permissions = true
 }
 ```
 
@@ -140,7 +165,18 @@ or key-order differences never show as drift.
 > are read-only. Destroying it only stops Terraform managing the setting: the
 > installation's exposure is left as last written, never reset.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
-> the pinned biome version is service-managed and is not a declarable field.
+> the pinned biome version is service-managed and is not a declarable field, and
+> changing `biome_id` replaces the install. The control plane plans the install,
+> gives the grant consent the plan asks for when `accept_permissions = true`
+> (through the credential's own consent door), and runs the install bound to
+> that plan. Unset means false: an install whose plan needs consent is then
+> refused (`CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED`, with its stop reason),
+> and the error says to set `accept_permissions = true`. A grant set that changed
+> since it was planned is never approved unseen; review it and apply again.
+> `accept_permissions` is intent only: it is never read back, so it never reads
+> as drift, an import leaves it unset, and changing it updates in place (it
+> never replaces the install). The `xema_biome_install` data source does not
+> expose it.
 > **`xema_role`** declares a custom role and its complete `grants` set (each a
 > `capability` such as `authorization:installation-consent.decide@1`, an
 > `environment` such as `org`, and optional `requires_approval`, `constraints`

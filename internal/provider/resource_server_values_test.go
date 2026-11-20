@@ -21,6 +21,7 @@ import (
 // Terraform as an inconsistent result after apply.
 var notServerFilled = map[string]string{
 	"xema_provider.api_key":                              "write-only secret: the API never returns it",
+	"xema_biome_install.accept_permissions":              "operator intent sent with the install: the server never reports it, so the read-back keeps the configured value",
 	"xema_role.grants":                                   "the declaration is the whole grant set: unset sends the empty set, and the read-back keeps the declared value wherever the server's means the same",
 	"xema_grant.resource_glob":                           "retired: the control plane refuses a declaration carrying it",
 	"xema_portal.subdomain":                              "retired: the control plane refuses a declaration carrying it",
@@ -58,6 +59,7 @@ func TestOptionalAttributesAcceptTheServersValue(t *testing.T) {
 
 func TestIdentityAttributesPlanAReplacement(t *testing.T) {
 	identity := map[string][]string{
+		"xema_biome_install":   {"biome_id"},
 		"xema_team":            {"slug"},
 		"xema_environment":     {"slug", "kind"},
 		"xema_grant":           {"subject_kind", "subject_ref", "capability"},
