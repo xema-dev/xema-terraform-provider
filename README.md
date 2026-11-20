@@ -96,6 +96,7 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_agent`                    | `agent`                 | llm-registry-api      |
 | `xema_skill`                    | `skill`                 | skill-registry-api    |
 | `xema_role`                     | `role`                  | authorization-api     |
+| `xema_role_assignment`          | `role-assignment`       | authorization-api     |
 | `xema_grant`                    | `grant`                 | authorization-api     |
 | `xema_team`                     | `team`                  | authorization-api     |
 | `xema_environment`              | `environment`           | authorization-api     |
@@ -140,6 +141,19 @@ or key-order differences never show as drift.
 > installation's exposure is left as last written, never reset.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field.
+> **`xema_role`** declares a custom role and its complete `grants` set (each a
+> `capability` such as `authorization:installation-consent.decide@1`, an
+> `environment` such as `org`, and optional `requires_approval`, `constraints`
+> and `where`). The provider always sends `grants`: leaving it unset declares
+> the empty set, so apply withdraws every grant the role holds, including ones
+> added outside Terraform. Who holds the role is not part of it.
+> **`xema_role_assignment`** assigns one role to one subject in the org
+> (`role_id`, `subject_kind` such as `service` or `user`, `subject_ref`). Every
+> attribute replaces it; its id is `<role_id>:<subject_kind>:<subject_ref>`
+> (import with that), and destroying one that is already gone succeeds. The
+> credential running Terraform must be a person's (an org admin who may confer
+> the role): the role-assignment route refuses a service token by design, so a
+> pipeline never assigns roles, its own included.
 > **`xema_space`** updates `classification` in place; changing `ref`,
 > `display_name`, or `labels` forces replacement (the owning service's update is
 > classification-only).

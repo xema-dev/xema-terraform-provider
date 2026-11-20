@@ -21,6 +21,7 @@ import (
 // Terraform as an inconsistent result after apply.
 var notServerFilled = map[string]string{
 	"xema_provider.api_key":                              "write-only secret: the API never returns it",
+	"xema_role.grants":                                   "the declaration is the whole grant set: unset sends the empty set, and the read-back keeps the declared value wherever the server's means the same",
 	"xema_grant.resource_glob":                           "retired: the control plane refuses a declaration carrying it",
 	"xema_portal.subdomain":                              "retired: the control plane refuses a declaration carrying it",
 	"xema_model_resolution_rule.target_temperature":      "the rule's author sets it: the server stores what it is given, else null, and fills no default",
@@ -57,13 +58,14 @@ func TestOptionalAttributesAcceptTheServersValue(t *testing.T) {
 
 func TestIdentityAttributesPlanAReplacement(t *testing.T) {
 	identity := map[string][]string{
-		"xema_team":        {"slug"},
-		"xema_environment": {"slug", "kind"},
-		"xema_grant":       {"subject_kind", "subject_ref", "capability"},
-		"xema_role":        {"slug"},
-		"xema_skill":       {"slug", "scope", "kind", "parent_slug"},
-		"xema_portal":      {"slug"},
-		"xema_model":       {"provider_id", "model_id"},
+		"xema_team":            {"slug"},
+		"xema_environment":     {"slug", "kind"},
+		"xema_grant":           {"subject_kind", "subject_ref", "capability"},
+		"xema_role":            {"slug"},
+		"xema_role_assignment": {"role_id", "subject_kind", "subject_ref"},
+		"xema_skill":           {"slug", "scope", "kind", "parent_slug"},
+		"xema_portal":          {"slug"},
+		"xema_model":           {"provider_id", "model_id"},
 	}
 	schemas := resourceSchemas(t)
 	for typeName, names := range identity {

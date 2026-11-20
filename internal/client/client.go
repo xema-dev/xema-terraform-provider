@@ -130,7 +130,10 @@ func (c *Client) url(kind, id string) string {
 	if id == "" {
 		return fmt.Sprintf("%s/control-plane/resources/%s", c.endpoint, kind)
 	}
-	return fmt.Sprintf("%s/control-plane/resources/%s/%s", c.endpoint, kind, id)
+	// The id is one path segment: a composite id (a role assignment's
+	// `<roleId>:<subjectKind>:<subjectRef>`) may hold characters a path
+	// segment cannot carry raw, so it is escaped.
+	return fmt.Sprintf("%s/control-plane/resources/%s/%s", c.endpoint, kind, neturl.PathEscape(id))
 }
 
 func (c *Client) do(ctx context.Context, method, kind, id string, body any, out any) error {
