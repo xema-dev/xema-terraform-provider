@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/xema-dev/xema-terraform-provider/internal/client"
 )
@@ -50,6 +51,11 @@ func (d *roleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 				Computed:    true,
 				Description: "Free-form role description.",
 			},
+			"grants": schema.SetNestedAttribute{
+				Computed:     true,
+				Description:  "The grants the role holds; empty reads as null.",
+				NestedObject: schema.NestedAttributeObject{Attributes: roleGrantDataSourceAttributes()},
+			},
 		},
 	}
 }
@@ -70,6 +76,13 @@ func (d *roleDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}
-	data.applyReadback(res.Spec)
+	data.applyReadback(res.Spec, nil)
+	// A lookup has no declaration to match, so the approval gate reads as the
+	// value it has.
+	for i := range data.Grants {
+		if data.Grants[i].RequiresApproval.IsNull() {
+			data.Grants[i].RequiresApproval = types.BoolValue(false)
+		}
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

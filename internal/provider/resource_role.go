@@ -34,14 +34,16 @@ func NewRoleResource() resource.Resource {
 	return &roleResource{}
 }
 
-// roleModel mirrors the role kind spec (slug, displayName, description) plus the
-// server-owned physical id stored in state. The slug is the immutable natural
-// key; built-in roles are not manageable here.
+// roleModel mirrors the role kind spec (slug, displayName, description, grants)
+// plus the server-owned physical id stored in state. The slug is the immutable
+// natural key; built-in roles are not manageable here. Who holds the role is
+// not part of it: that is `xema_role_assignment`.
 type roleModel struct {
-	ID          types.String `tfsdk:"id"`
-	Slug        types.String `tfsdk:"slug"`
-	DisplayName types.String `tfsdk:"display_name"`
-	Description types.String `tfsdk:"description"`
+	ID          types.String     `tfsdk:"id"`
+	Slug        types.String     `tfsdk:"slug"`
+	DisplayName types.String     `tfsdk:"display_name"`
+	Description types.String     `tfsdk:"description"`
+	Grants      []roleGrantModel `tfsdk:"grants"`
 }
 
 func (r *roleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -50,7 +52,8 @@ func (r *roleResource) Metadata(_ context.Context, req resource.MetadataRequest,
 
 func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "A Xema role (permission set), managed through authorization-api via the control plane.",
+		Description: "A Xema custom role (permission set) and the grants it holds, managed through " +
+			"authorization-api via the control plane. Who holds the role is declared with `xema_role_assignment`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
@@ -75,6 +78,11 @@ func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Computed:    true,
 				Description: "Free-form role description.",
 			},
+			"grants": schema.SetNestedAttribute{
+				Optional:     true,
+				Description:  roleGrantsDescription,
+				NestedObject: schema.NestedAttributeObject{Attributes: roleGrantAttributes()},
+			},
 		},
 	}
 }
@@ -83,21 +91,33 @@ func (r *roleResource) Configure(_ context.Context, req resource.ConfigureReques
 	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
-func (m roleModel) toSpec() map[string]any {
+// toSpec always carries `grants`: the role kind reads an absent `grants` as the
+// empty set, so a declaration that left it out would withdraw every grant on
+// each update. Sending it makes that the configuration's statement, not an
+// accident of omission.
+func (m roleModel) toSpec() (map[string]any, error) {
+	grants, err := roleGrantsToSpec(m.Grants)
+	if err != nil {
+		return nil, err
+	}
 	spec := map[string]any{
 		"slug":        m.Slug.ValueString(),
 		"displayName": m.DisplayName.ValueString(),
+		"grants":      grants,
 	}
 	if d := optString(m.Description); d != "" {
 		spec["description"] = d
 	}
-	return spec
+	return spec, nil
 }
 
-func (m *roleModel) applyReadback(spec map[string]any) {
+// applyReadback sets the model from the server's spec; prior is the grant set
+// the plan or state held, kept where the server's value means the same.
+func (m *roleModel) applyReadback(spec map[string]any, prior []roleGrantModel) {
 	m.Slug = types.StringValue(specString(spec, "slug"))
 	m.DisplayName = types.StringValue(specString(spec, "displayName"))
 	m.Description = strOrNull(specString(spec, "description"))
+	m.Grants = roleGrantsFromSpec(spec, prior)
 }
 
 func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -107,7 +127,12 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
-	handle, err := r.client.Create(ctx, roleKind, plan.toSpec())
+	spec, err := plan.toSpec()
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid role grants", err.Error())
+		return
+	}
+	handle, err := r.client.Create(ctx, roleKind, spec)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create role", err.Error())
 		return
@@ -119,7 +144,7 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		resp.Diagnostics.AddError("Failed to read role after create", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec)
+	plan.applyReadback(res.Spec, plan.Grants)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -139,7 +164,7 @@ func (r *roleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}
-	state.applyReadback(res.Spec)
+	state.applyReadback(res.Spec, state.Grants)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -150,12 +175,17 @@ func (r *roleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
-	res, err := r.client.Update(ctx, roleKind, plan.ID.ValueString(), plan.toSpec())
+	spec, err := plan.toSpec()
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid role grants", err.Error())
+		return
+	}
+	res, err := r.client.Update(ctx, roleKind, plan.ID.ValueString(), spec)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update role", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec)
+	plan.applyReadback(res.Spec, plan.Grants)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
