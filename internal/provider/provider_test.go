@@ -75,7 +75,7 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 		"xema_biome_install":         false,
 		"xema_portal":                false,
 		"xema_agent":                 false,
-		"xema_grant":                 false,
+		"xema_service_principal":     false,
 		"xema_team":                  false,
 		"xema_environment":           false,
 		"xema_skill":                 false,

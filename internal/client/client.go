@@ -96,6 +96,10 @@ type Handle struct {
 	Kind       string `json:"kind"`
 	PhysicalID string `json:"physicalId"`
 	ManagedKey string `json:"managedKey"`
+	// OneTimeOutputs carries values the service returns on create only and
+	// never again (a service principal's first client secret). Absent for
+	// kinds that have none. They are secrets: never log them.
+	OneTimeOutputs map[string]string `json:"oneTimeOutputs,omitempty"`
 }
 
 // Resource is the read-back view of a managed resource.
@@ -154,6 +158,11 @@ func (c *Client) installationOrgURL(id string) string {
 }
 
 func (c *Client) doURL(ctx context.Context, method, url string, body any, out any) error {
+	return c.doURLWithHeaders(ctx, method, url, nil, body, out)
+}
+
+// doURLWithHeaders is doURL with extra request headers (an Idempotency-Key).
+func (c *Client) doURLWithHeaders(ctx context.Context, method, url string, headers map[string]string, body any, out any) error {
 	if c.orgPending {
 		return fmt.Errorf("the provider org is not known yet; it cannot be used before apply")
 	}
@@ -175,6 +184,9 @@ func (c *Client) doURL(ctx context.Context, method, url string, body any, out an
 		req.Header.Set(orgHeader, c.org)
 	}
 	req.Header.Set("Accept", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -275,6 +287,36 @@ func (c *Client) Update(ctx context.Context, kind, id string, spec map[string]an
 // Delete removes a resource by physical id.
 func (c *Client) Delete(ctx context.Context, kind, id string) error {
 	return c.do(ctx, http.MethodDelete, kind, id, nil, nil)
+}
+
+// RotatedCredential is the answer to a service principal credential rotation.
+// ClientSecret is a secret delivered once; Replayed is true when the service
+// answered an idempotent replay (in which case it holds no secret).
+type RotatedCredential struct {
+	CredentialRevision string `json:"credentialRevision"`
+	ClientID           string `json:"clientId"`
+	TokenEndpoint      string `json:"tokenEndpoint"`
+	ClientSecret       string `json:"clientSecret"`
+	Replayed           bool   `json:"replayed"`
+}
+
+type credentialRotationBody struct {
+	OverlapSeconds int64 `json:"overlapSeconds"`
+}
+
+// RotateServicePrincipalCredential issues a new client secret for a service
+// principal (POST /control-plane/resources/service-principal/:id/credential-rotations).
+// The previous secret stays valid for overlapSeconds. The idempotency key makes a
+// retried request answer a replay, which carries no secret (the service refuses
+// it with SERVICE_PRINCIPAL_SECRET_NOT_DELIVERED).
+func (c *Client) RotateServicePrincipalCredential(ctx context.Context, id string, overlapSeconds int64, idempotencyKey string) (*RotatedCredential, error) {
+	var out RotatedCredential
+	u := c.url("service-principal", id) + "/credential-rotations"
+	headers := map[string]string{"Idempotency-Key": idempotencyKey}
+	if err := c.doURLWithHeaders(ctx, http.MethodPost, u, headers, credentialRotationBody{OverlapSeconds: overlapSeconds}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // CreateInstallationOrg creates an org on the installation surface

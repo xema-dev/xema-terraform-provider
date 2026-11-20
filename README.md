@@ -127,7 +127,7 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_skill`                    | `skill`                 | skill-registry-api    |
 | `xema_role`                     | `role`                  | authorization-api     |
 | `xema_role_assignment`          | `role-assignment`       | authorization-api     |
-| `xema_grant`                    | `grant`                 | authorization-api     |
+| `xema_service_principal`        | `service-principal`     | identity-api          |
 | `xema_team`                     | `team`                  | authorization-api     |
 | `xema_environment`              | `environment`           | authorization-api     |
 | `xema_space`                    | `space`                 | space-registry-api    |
@@ -207,6 +207,19 @@ or key-order differences never show as drift.
 > credential running Terraform must be a person's (an org admin who may confer
 > the role): the role-assignment route refuses a service token by design, so a
 > pipeline never assigns roles, its own included.
+> **`xema_service_principal`** creates a machine identity with an OAuth client
+> (`client_id`, `token_endpoint`, `client_secret`). `name` (lowercase, digits and
+> `-`, at most 40 characters), `display_name` and `description` replace it on any
+> change; changing `rotation_trigger` rotates the client secret in place (the old
+> one stays valid for `rotation_overlap_seconds`, 30 to 86400, default 300).
+> **The client secret is returned by the service once and IS stored in Terraform
+> state as a sensitive value, so the state backend is a secret store: encrypt it
+> and restrict access to it.** Write the secret straight into your CI secret store
+> (for example a `github_actions_secret` or a Key Vault secret resource), not into
+> an output. Give a pipeline's principal roles that confer no authority: assigning
+> roles needs a person's token (see `xema_role_assignment`). Import by principal
+> id; an imported principal has a null `client_secret`, so rotate to obtain one.
+> A create or rotation that returns no secret is an error, never an empty secret.
 > **`xema_space`** updates `classification` in place; changing `ref`,
 > `display_name`, or `labels` forces replacement (the owning service's update is
 > classification-only).
@@ -219,6 +232,11 @@ or key-order differences never show as drift.
 Every kind also has a matching **data source** (`data.xema_<kind>`) for
 read-by-id lookups: the `id` is the only input and every spec field is exposed
 as a computed attribute.
+
+### Breaking changes in v0.6.0
+
+`xema_grant` and `data.xema_grant` are removed. Declare a `xema_role` with the
+capability in its `grants` and assign it with `xema_role_assignment`.
 
 ### Distribution locks are not a provider concern
 
