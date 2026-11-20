@@ -107,8 +107,9 @@ func (r *biomeInstallResource) Schema(_ context.Context, _ resource.SchemaReques
 				Description: "Consent to the grant set the install plan asks for. The control plane plans the install, " +
 					"gives the plan's grant consent through the credential's own consent door when this is true, and " +
 					"runs the install bound to that plan; unset means false, and an install that needs consent is " +
-					"then refused with nothing run. A grant set that changed since it was planned is never approved. " +
-					"This is intent only: it is not read back, and changing it never replaces the install.",
+					"then refused before it runs. A grant set that changed since it was planned is never approved. " +
+					"It acts only when the install is created: changing it on an existing install updates nothing " +
+					"(it never replaces the install). This is intent only: it is not read back.",
 			},
 		},
 	}
@@ -174,12 +175,17 @@ func biomeInstallReadback(spec map[string]any) (types.String, jsontypes.Normaliz
 // summary. Only the error's code and stop reason are quoted, never the request.
 func biomeInstallFailure(summary string, err error, accept types.Bool) (string, string) {
 	if apiErr := client.AsAPIError(err, biomeInstallConsentRefusedCode); apiErr != nil && apiErr.Status == http.StatusUnprocessableEntity {
-		reason := apiErr.Reason
-		if reason == "" {
-			reason = "not reported"
+		if apiErr.Reason == "" {
+			// No stop reason: the install ran, and the consent its run asked for
+			// afterwards was not given. Accepting permissions would not change that.
+			return "Biome install consent refused after the install ran", fmt.Sprintf("The control plane ran "+
+				"the install, but the grant consent it asked for after the run was not given (%s). The install "+
+				"may exist without that consent, and Terraform does not record it. Decide the pending consent "+
+				"with a credential allowed to decide consent in this org, then import the install by its id "+
+				"(or remove it) and apply again.", apiErr.Code)
 		}
 		detail := fmt.Sprintf("The control plane planned the install but did not give the grant consent the plan "+
-			"asks for (%s, stop reason: %s), so the install is not consented.", apiErr.Code, reason)
+			"asks for (%s, stop reason: %s); nothing ran.", apiErr.Code, apiErr.Reason)
 		if !accept.ValueBool() {
 			detail += " Set `accept_permissions = true` on this resource to consent to the grant set the plan " +
 				"shows, then apply again."

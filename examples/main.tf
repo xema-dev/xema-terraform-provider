@@ -176,9 +176,11 @@ resource "xema_deliverable_spec" "adr" {
 
 # An org-scoped biome installation (projectId null; version is service-managed).
 # accept_permissions consents to the grant set the install plan shows; unset, an
-# install that needs consent is refused and nothing runs. Run from a pipeline,
-# the provider's token can be the pipeline's own service-principal token (with
-# `org` set) once that service holds the consent-decide role assigned above.
+# install whose plan needs consent is refused before it runs. It acts only when
+# the install is created. Run from a pipeline, the provider's token can be the
+# pipeline's own service-principal token (with `org` set): that service must
+# hold `biome:install@1` in the org to be admitted at all, and the
+# consent-decide role assigned above to give consent.
 resource "xema_biome_install" "slack" {
   biome_id           = "slack-connector"
   config_json        = jsonencode({ defaultChannel = "#general" })

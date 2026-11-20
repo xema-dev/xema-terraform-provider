@@ -247,8 +247,12 @@ func TestBiomeInstallConsentRefusedWithoutReason(t *testing.T) {
 	fake.refusalStatus = http.StatusUnprocessableEntity
 	fake.refusal = map[string]any{"code": "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED", "message": "after the run"}
 	_, resp := createBiomeInstall(t, fake, nil)
-	if d := onlyError(t, resp.Diagnostics); !strings.Contains(d.Detail(), "stop reason: not reported") {
-		t.Errorf("detail = %q", d.Detail())
+	d := onlyError(t, resp.Diagnostics)
+	if d.Summary() != "Biome install consent refused after the install ran" {
+		t.Errorf("summary = %q", d.Summary())
+	}
+	if strings.Contains(d.Detail(), "accept_permissions") || strings.Contains(d.Detail(), "nothing ran") {
+		t.Errorf("an install that ran is neither fixed by accept_permissions nor unrun: %q", d.Detail())
 	}
 }
 

@@ -41,10 +41,15 @@ instead of a person's: set `org` (the provider sends it as `X-Xema-Org-Id`) and
 pass the token through `XEMA_TOKEN` from the pipeline's secret store, never in
 the configuration. The control plane admits it for biome installs only; every
 other kind still needs an org-admin person token, and assigning roles refuses a
-service token by design. To give consent (`accept_permissions = true`), the
-service must hold, in that org, a role granting
-`authorization:installation-consent.decide@1`; an org admin declares that role
-and its `xema_role_assignment` once, with a person's credential.
+service token by design. The service needs two grants in that org:
+
+- `biome:install@1`, to be admitted at all (without it the install is refused
+  with `service-principal-lacks-install`);
+- `authorization:installation-consent.decide@1`, held through a role, to give
+  consent (`accept_permissions = true`).
+
+An org admin declares the roles and their `xema_role_assignment`s once, with a
+person's credential.
 
 ```hcl
 # In the pipeline: XEMA_ENDPOINT, XEMA_ORG and XEMA_TOKEN (the service token) come from the environment.
@@ -170,13 +175,15 @@ or key-order differences never show as drift.
 > gives the grant consent the plan asks for when `accept_permissions = true`
 > (through the credential's own consent door), and runs the install bound to
 > that plan. Unset means false: an install whose plan needs consent is then
-> refused (`CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED`, with its stop reason),
-> and the error says to set `accept_permissions = true`. A grant set that changed
-> since it was planned is never approved unseen; review it and apply again.
-> `accept_permissions` is intent only: it is never read back, so it never reads
-> as drift, an import leaves it unset, and changing it updates in place (it
-> never replaces the install). The `xema_biome_install` data source does not
-> expose it.
+> refused before it runs (`CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED`, with its
+> stop reason), and the error says to set `accept_permissions = true`. A grant
+> set that changed since it was planned is never approved unseen; review it and
+> apply again. The same code without a stop reason means the install ran but the
+> consent its run asked for afterwards was not given; the error says so.
+> `accept_permissions` acts only when the install is created: changing it on an
+> existing install updates nothing. It is intent only: it is never read back, so
+> it never reads as drift, an import leaves it unset, and changing it never
+> replaces the install. The `xema_biome_install` data source does not expose it.
 > **`xema_role`** declares a custom role and its complete `grants` set (each a
 > `capability` such as `authorization:installation-consent.decide@1`, an
 > `environment` such as `org`, and optional `requires_approval`, `constraints`
