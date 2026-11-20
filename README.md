@@ -236,7 +236,13 @@ as a computed attribute.
 ### Breaking changes in v0.6.0
 
 `xema_grant` and `data.xema_grant` are removed. Declare a `xema_role` with the
-capability in its `grants` and assign it with `xema_role_assignment`.
+capability in its `grants` and assign it with `xema_role_assignment`. Before
+upgrading, run `terraform state rm` on every `xema_grant` resource and
+`data.xema_grant` address, or the new provider cannot read the old state.
+
+`xema_service_principal` needs a person's org-admin token: a service token is
+refused. A principal still `REVOKING` keeps its name, so re-creating the same
+name right after a destroy can conflict until revocation finishes.
 
 ### Distribution locks are not a provider concern
 

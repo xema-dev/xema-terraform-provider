@@ -34,6 +34,8 @@ type servicePrincipalServer struct {
 	creates        int
 	deletes        int
 	secretOnRead   bool
+	// deleteStatus, when set, answers every DELETE with that status.
+	deleteStatus int
 }
 
 // fakeServicePrincipalControlPlane answers as the service-principal kind does:
@@ -81,6 +83,10 @@ func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 			writeData(w, out)
 		case r.Method == http.MethodDelete:
 			fake.deletes++
+			if fake.deleteStatus != 0 {
+				http.Error(w, "boom", fake.deleteStatus)
+				return
+			}
 			id := strings.TrimPrefix(rest, "/")
 			if fake.held[id] == nil {
 				http.NotFound(w, r)
@@ -207,6 +213,20 @@ func TestServicePrincipalCreateWithoutSecretFails(t *testing.T) {
 	}
 	if !resp.State.Raw.IsNull() {
 		t.Error("no state may be saved for a create without a secret")
+	}
+}
+
+func TestServicePrincipalCreateWithoutSecretNamesAPrincipalItCouldNotRemove(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	fake.omitSecret = true
+	fake.deleteStatus = http.StatusInternalServerError
+	_, resp := createServicePrincipal(t, fake, "")
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("a create with no clientSecret must fail")
+	}
+	detail := resp.Diagnostics.Errors()[0].Detail()
+	if !strings.Contains(detail, "sp-1") || !strings.Contains(detail, "NOT removed") || strings.Contains(detail, "was removed again") {
+		t.Errorf("the diagnostic must name the principal and say it was not removed: %q", detail)
 	}
 }
 
@@ -460,6 +480,16 @@ func TestServicePrincipalSchema(t *testing.T) {
 	if !name("ci") || !name("ci-pipeline-2") || name("Ci") || name("1ci") || name("ci_x") || name("") ||
 		name("a"+strings.Repeat("b", 40)) || !name("a"+strings.Repeat("b", 39)) {
 		t.Error("name must match ^[a-z][a-z0-9-]{0,39}$")
+	}
+
+	desc := func(v types.String) bool {
+		var resp validator.StringResponse
+		nonEmptyDescriptionValidator{}.ValidateString(context.Background(),
+			validator.StringRequest{ConfigValue: v}, &resp)
+		return !resp.Diagnostics.HasError()
+	}
+	if desc(types.StringValue("")) || !desc(types.StringNull()) || !desc(types.StringValue("for CI")) {
+		t.Error("description must refuse empty and allow null")
 	}
 
 	overlap := func(in int64) bool {

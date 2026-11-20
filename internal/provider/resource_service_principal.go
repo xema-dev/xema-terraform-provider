@@ -90,6 +90,28 @@ func (servicePrincipalNameValidator) ValidateString(_ context.Context, req valid
 	}
 }
 
+// nonEmptyDescriptionValidator refuses description = "": null or omitted is how
+// the description is left out, and the service reads an empty one back as none.
+type nonEmptyDescriptionValidator struct{}
+
+func (nonEmptyDescriptionValidator) Description(context.Context) string {
+	return "must not be empty; omit the attribute instead"
+}
+
+func (v nonEmptyDescriptionValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (nonEmptyDescriptionValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if req.ConfigValue.ValueString() == "" {
+		resp.Diagnostics.AddAttributeError(req.Path, "Empty description",
+			"The description must not be empty; omit the attribute instead.")
+	}
+}
+
 // rotationOverlapValidator bounds the overlap window to what the service accepts.
 type rotationOverlapValidator struct{}
 
@@ -151,8 +173,9 @@ func (r *servicePrincipalResource) Schema(_ context.Context, _ resource.SchemaRe
 			},
 			"description": schema.StringAttribute{
 				Optional:      true,
-				Description:   "What the principal is for.",
+				Description:   "What the principal is for. Omit it rather than set it empty.",
 				PlanModifiers: replace,
+				Validators:    []validator.String{nonEmptyDescriptionValidator{}},
 			},
 			"rotation_trigger": schema.StringAttribute{
 				Optional: true,
@@ -316,10 +339,15 @@ func (r *servicePrincipalResource) Create(ctx context.Context, req resource.Crea
 		// The principal exists but Terraform would hold no secret for it, and
 		// the service will not hand it out again. Withdraw it so a retry can
 		// create it afresh, rather than leave an untracked principal behind.
-		_ = r.client.Delete(ctx, servicePrincipalKind, handle.PhysicalID)
-		resp.Diagnostics.AddError("Service principal create returned no client secret",
-			"The service did not return a client secret for the new principal ("+secretNotDeliveredCode+"). "+
-				"The principal was removed again; retry the apply.")
+		const summary = "Service principal create returned no client secret"
+		cause := "The service did not return a client secret for the new principal (" + secretNotDeliveredCode + "). "
+		if delErr := r.client.Delete(ctx, servicePrincipalKind, handle.PhysicalID); delErr != nil && !client.IsNotFound(delErr) {
+			resp.Diagnostics.AddError(summary, cause+"Removing the principal again failed ("+delErr.Error()+"): "+
+				"principal "+handle.PhysicalID+" was NOT removed and is not tracked by Terraform. "+
+				"Revoke it by hand before retrying.")
+			return
+		}
+		resp.Diagnostics.AddError(summary, cause+"The principal was removed again; retry the apply.")
 		return
 	}
 
@@ -402,7 +430,7 @@ func (r *servicePrincipalResource) Update(ctx context.Context, req resource.Upda
 	if rotated.ClientSecret == "" {
 		resp.Diagnostics.AddError("Credential rotation returned no client secret",
 			"The service did not return a client secret ("+secretNotDeliveredCode+"). "+
-				"The credential state is unchanged here; change rotation_trigger again to retry.")
+				"The credential is unchanged and rotation_trigger in state keeps its old value, so running apply again retries the rotation.")
 		return
 	}
 
