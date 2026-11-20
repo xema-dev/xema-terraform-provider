@@ -28,6 +28,9 @@ const (
 	// biomeInstallConsentRefusedCode: the install needs a grant consent the
 	// control plane could not give; the error names the stop reason.
 	biomeInstallConsentRefusedCode = "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED"
+	// biomeInstallConsentRefusalUnmappedCode: the consent door refused with a
+	// status and code control-plane maps to no reason (a defect to report).
+	biomeInstallConsentRefusalUnmappedCode = "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED"
 	// biomeInstallSpecInvalidCode: the spec's `acceptPermissions` is not a boolean.
 	biomeInstallSpecInvalidCode = "CONTROL_PLANE_BIOME_INSTALL_SPEC_INVALID"
 )
@@ -175,27 +178,10 @@ func biomeInstallReadback(spec map[string]any) (types.String, jsontypes.Normaliz
 // summary. Only the error's code and stop reason are quoted, never the request.
 func biomeInstallFailure(summary string, err error, accept types.Bool) (string, string) {
 	if apiErr := client.AsAPIError(err, biomeInstallConsentRefusedCode); apiErr != nil && apiErr.Status == http.StatusUnprocessableEntity {
-		if apiErr.Reason == "" {
-			// No stop reason: the install ran, and the consent its run asked for
-			// afterwards was not given. Accepting permissions would not change that.
-			return "Biome install consent refused after the install ran", fmt.Sprintf("The control plane ran "+
-				"the install, but the grant consent it asked for after the run was not given (%s). The install "+
-				"may exist without that consent, and Terraform does not record it. Decide the pending consent "+
-				"with a credential allowed to decide consent in this org, then import the install by its id "+
-				"(or remove it) and apply again.", apiErr.Code)
-		}
-		detail := fmt.Sprintf("The control plane planned the install but did not give the grant consent the plan "+
-			"asks for (%s, stop reason: %s); nothing ran.", apiErr.Code, apiErr.Reason)
-		if !accept.ValueBool() {
-			detail += " Set `accept_permissions = true` on this resource to consent to the grant set the plan " +
-				"shows, then apply again."
-		} else {
-			detail += " `accept_permissions` is true, so the consent could not be given as planned: the grant " +
-				"set may have changed since it was planned (a changed set is never approved unseen), or the " +
-				"credential may not decide consent in this org (it needs a role holding " +
-				"`authorization:installation-consent.decide@1`). Review the grant set and apply again."
-		}
-		return "Biome install consent refused", detail
+		return biomeInstallConsentRefused(apiErr, accept)
+	}
+	if apiErr := client.AsAPIError(err, biomeInstallConsentRefusalUnmappedCode); apiErr != nil && apiErr.Status == http.StatusBadGateway {
+		return biomeInstallConsentRefusalUnmapped(apiErr)
 	}
 	if apiErr := client.AsAPIError(err, biomeInstallSpecInvalidCode); apiErr != nil && apiErr.Status == http.StatusBadRequest {
 		return "Biome install spec refused", fmt.Sprintf("The control plane refused the spec (%s): "+
