@@ -119,7 +119,10 @@ type APIError struct {
 	// Reason is the typed stop reason an error carries when it has one (a
 	// biome install's refused consent names why it stopped); empty otherwise.
 	Reason string `json:"reason"`
-	body   string
+	// Stage is when a biome install's consent refusal happened, `before-run`
+	// or `after-run`; empty when the server does not report it.
+	Stage string `json:"stage"`
+	body  string
 }
 
 func (e *APIError) Error() string {

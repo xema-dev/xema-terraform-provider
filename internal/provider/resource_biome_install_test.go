@@ -321,14 +321,14 @@ func TestBiomeInstallConsentRefusalUnmappedSaysReportIt(t *testing.T) {
 	fake.refusalStatus = http.StatusBadGateway
 	fake.refusal = map[string]any{
 		"code":    "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED",
-		"message": "The consent door refused the grant consent of 'slack-connector' with HTTP 418 TEAPOT, which this service maps to no consent reason (a defect to report); nothing ran.",
+		"message": "The consent door refused the grant consent of 'slack-connector' with HTTP 418 TEAPOT, which this service maps to no consent reason (a defect to report).",
 	}
 	_, resp := createBiomeInstall(t, fake, nil)
 	d := onlyError(t, resp.Diagnostics)
 	if d.Summary() != "Biome install consent refusal unmapped" {
 		t.Errorf("summary = %q", d.Summary())
 	}
-	for _, want := range []string{"unmapped consent refusal", "HTTP 418 TEAPOT", "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED", "Report it"} {
+	for _, want := range []string{"unmapped consent refusal", "HTTP 418 TEAPOT", "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED", "report it"} {
 		if !strings.Contains(d.Detail(), want) {
 			t.Errorf("detail lacks %q: %q", want, d.Detail())
 		}
@@ -387,5 +387,97 @@ func TestBiomeInstallDataSourceReadsTheServer(t *testing.T) {
 	}
 	if got.BiomeID.ValueString() != "slack-connector" || got.ConfigJson.ValueString() != "{}" {
 		t.Errorf("unexpected state: %#v", got)
+	}
+}
+
+// m1: the stage, never the message text, says whether the install ran.
+func TestBiomeInstallConsentRefusedFollowsTheStage(t *testing.T) {
+	accepted := func() *bool { b := true; return &b }()
+	for _, tc := range []struct {
+		name, stage, summary string
+		want, never          []string
+	}{
+		{
+			name: "after-run", stage: "after-run", summary: "Biome install consent refused after the install ran",
+			want:  []string{"exists but is unconfigured", "Import the install by its id (or remove it)", "`authorization:installation-consent.decide@1`"},
+			never: []string{"othing ran", "accept_permissions", "does not report"},
+		},
+		{
+			name: "before-run", stage: "before-run", summary: "Biome install consent refused",
+			want:  []string{"Nothing ran.", "`authorization:installation-consent.decide@1`"},
+			never: []string{"exists but is unconfigured", "does not report"},
+		},
+		{
+			name: "absent", stage: "", summary: "Biome install consent refused",
+			want:  []string{"does not report whether the install ran", "check whether the installation exists"},
+			never: []string{"othing ran", "exists but is unconfigured"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := fakeBiomeInstallControlPlane(t)
+			fake.refusalStatus = http.StatusUnprocessableEntity
+			fake.refusal = map[string]any{"code": "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED", "reason": "not-authorized", "message": "nothing ran"}
+			if tc.stage != "" {
+				fake.refusal["stage"] = tc.stage
+			}
+			_, resp := createBiomeInstall(t, fake, accepted)
+			d := onlyError(t, resp.Diagnostics)
+			if d.Summary() != tc.summary {
+				t.Errorf("summary = %q", d.Summary())
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(d.Detail(), w) {
+					t.Errorf("detail lacks %q: %q", w, d.Detail())
+				}
+			}
+			for _, n := range tc.never {
+				if strings.Contains(d.Detail(), n) {
+					t.Errorf("detail has %q: %q", n, d.Detail())
+				}
+			}
+		})
+	}
+}
+
+// m2: the 502 follows the same stage rule, with no unconditional "nothing ran".
+func TestBiomeInstallConsentRefusalUnmappedFollowsTheStage(t *testing.T) {
+	for _, tc := range []struct {
+		stage, want, never string
+	}{
+		{stage: "after-run", want: "exists but is unconfigured", never: "othing ran"},
+		{stage: "before-run", want: "Nothing ran.", never: "exists but is unconfigured"},
+		{stage: "", want: "check whether the installation exists", never: "othing ran"},
+	} {
+		t.Run("stage="+tc.stage, func(t *testing.T) {
+			fake := fakeBiomeInstallControlPlane(t)
+			fake.refusalStatus = http.StatusBadGateway
+			fake.refusal = map[string]any{"code": "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED", "message": "HTTP 418 TEAPOT"}
+			if tc.stage != "" {
+				fake.refusal["stage"] = tc.stage
+			}
+			_, resp := createBiomeInstall(t, fake, nil)
+			d := onlyError(t, resp.Diagnostics)
+			if !strings.Contains(d.Detail(), tc.want) || strings.Contains(d.Detail(), tc.never) {
+				t.Errorf("want %q, never %q: %q", tc.want, tc.never, d.Detail())
+			}
+			if !strings.Contains(d.Detail(), "report it") {
+				t.Errorf("detail does not ask to report it: %q", d.Detail())
+			}
+		})
+	}
+}
+
+// m3: a refused installation read names Biome Host, not accept_permissions or the decide role.
+func TestBiomeInstallConsentRefusedInstallationReadNotAuthorized(t *testing.T) {
+	fake := fakeBiomeInstallControlPlane(t)
+	fake.refusalStatus = http.StatusUnprocessableEntity
+	fake.refusal = map[string]any{"code": "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED", "reason": "installation-read-not-authorized", "stage": "before-run", "message": "refused"}
+	_, resp := createBiomeInstall(t, fake, nil)
+	d := onlyError(t, resp.Diagnostics)
+	if !strings.Contains(d.Detail(), "read the org's biome installations on Biome Host") {
+		t.Errorf("detail lacks the Biome Host read hint: %q", d.Detail())
+	}
+	if strings.Contains(d.Detail(), "accept_permissions") || strings.Contains(d.Detail(), "installation-consent.decide") {
+		t.Errorf("an installation read refusal is not fixed by accepting or the decide role: %q", d.Detail())
 	}
 }
