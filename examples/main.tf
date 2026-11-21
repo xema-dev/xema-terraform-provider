@@ -154,6 +154,17 @@ resource "xema_role_assignment" "pipeline_consent_decider" {
   subject_ref  = var.pipeline_principal_id
 }
 
+# A pipeline's service principal. The client secret is returned once and is
+# stored in Terraform state as a sensitive value: keep the state backend
+# encrypted and access-restricted, and write the secret straight into the CI
+# secret store (a github_actions_secret or Key Vault secret resource), never
+# into an output. Bump rotation_trigger to rotate the secret in place.
+resource "xema_service_principal" "pipeline" {
+  name             = "ci-pipeline"
+  display_name     = "CI pipeline"
+  rotation_trigger = "2026-11"
+}
+
 # An organization. Create/update/delete is an installation operation and
 # requires a platform-admin token (org admins read their own org via the data source).
 resource "xema_org" "acme" {
