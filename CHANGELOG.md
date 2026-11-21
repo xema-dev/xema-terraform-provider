@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Breaking:** `xema_grant` and `data.xema_grant` are removed. Declare a
+  `xema_role` with the grants and a `xema_role_assignment` instead. Before you
+  upgrade, run `terraform state rm` on every `xema_grant` and
+  `data.xema_grant` address (README, "Breaking changes in v0.6.0").
+- `xema_service_principal`: a CI pipeline's service principal, with federated
+  credentials, a one-time secret and in-place rotation (`rotation_trigger`).
+  Needs control-plane with the service-principal resource kind (xema-base
+  opus-9599b).
 - `xema_biome_install` gains `accept_permissions`, and its consent and spec
   refusals are explained. Requires control-plane with the biome-install consent
   sequence (xema-base x9540-u2b/u2c). Publish this release only after that is
