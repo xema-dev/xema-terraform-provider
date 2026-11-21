@@ -20,7 +20,7 @@ func TestModelStrategyRoundTripsItsSpec(t *testing.T) {
 		DisplayName: types.StringValue("House strategy"),
 		Description: types.StringValue("Editorial workloads"),
 		Rules: []ruleBodyModel{{
-			Selector:              &selectorModel{ModelLane: types.StringValue("coder"), Extra: types.MapNull(types.StringType)},
+			Selector:              &selectorModel{ModelLane: types.StringValue("standard"), Extra: types.MapNull(types.StringType)},
 			TargetModelID:         types.StringValue("model-uuid"),
 			TargetReasoningEffort: types.StringValue("high"),
 			TargetTemperature:     types.Float64Null(),
@@ -57,7 +57,7 @@ func TestModelStrategyRoundTripsItsSpec(t *testing.T) {
 		t.Fatalf("description did not round-trip: %v", readback.Description)
 	}
 	if len(readback.Rules) != 1 || readback.Rules[0].TargetModelID.ValueString() != "model-uuid" ||
-		readback.Rules[0].Selector == nil || readback.Rules[0].Selector.ModelLane.ValueString() != "coder" ||
+		readback.Rules[0].Selector == nil || readback.Rules[0].Selector.ModelLane.ValueString() != "standard" ||
 		readback.Rules[0].Priority.ValueInt64() != 20 {
 		t.Fatalf("rules did not round-trip: %#v", readback.Rules)
 	}

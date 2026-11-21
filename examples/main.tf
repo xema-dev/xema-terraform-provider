@@ -61,7 +61,7 @@ resource "xema_model_strategy" "house" {
       target_reasoning_effort = "high"
       priority                = 20
       selector = {
-        model_lane = "coder"
+        model_lane = "standard"
       }
     },
   ]
