@@ -13,7 +13,7 @@ import (
 
 func TestModelResolutionRuleRoundTripsItsSpec(t *testing.T) {
 	declared := mrrModel{
-		Selector:              &selectorModel{ModelLane: types.StringValue("coder"), Extra: types.MapNull(types.StringType)},
+		Selector:              &selectorModel{ModelLane: types.StringValue("standard"), Extra: types.MapNull(types.StringType)},
 		TargetModelID:         types.StringValue("model-uuid"),
 		TargetTemperature:     types.Float64Value(0.2),
 		TargetReasoningEffort: types.StringValue("high"),
@@ -40,7 +40,7 @@ func TestModelResolutionRuleRoundTripsItsSpec(t *testing.T) {
 	if readback.TargetModelID.ValueString() != "model-uuid" {
 		t.Fatalf("ids did not round-trip: %#v", readback)
 	}
-	if readback.Selector == nil || readback.Selector.ModelLane.ValueString() != "coder" {
+	if readback.Selector == nil || readback.Selector.ModelLane.ValueString() != "standard" {
 		t.Fatalf("selector did not round-trip: %#v", readback.Selector)
 	}
 	if readback.Priority.ValueInt64() != 10 || readback.TargetTemperature.ValueFloat64() != 0.2 {
