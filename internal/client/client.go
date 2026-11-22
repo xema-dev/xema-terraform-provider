@@ -12,6 +12,9 @@
 //	PUT    /control-plane/resources/:kind/:id       -> update
 //	DELETE /control-plane/resources/:kind/:id       -> delete
 //
+// Every success response is wrapped as {"data": <payload>} (list: an array
+// payload); the client unwraps it in one place, doURL.
+//
 // Every org-scoped request carries an org-admin bearer token and the canonical
 // X-Xema-Org-Id tenant header. The control plane derives the authoritative org
 // from the verified token; the header is sent for tenant routing parity. For
@@ -93,6 +96,10 @@ type Handle struct {
 	Kind       string `json:"kind"`
 	PhysicalID string `json:"physicalId"`
 	ManagedKey string `json:"managedKey"`
+	// OneTimeOutputs carries values the service returns on create only and
+	// never again (a service principal's first client secret). Absent for
+	// kinds that have none. They are secrets: never log them.
+	OneTimeOutputs map[string]string `json:"oneTimeOutputs,omitempty"`
 }
 
 // Resource is the read-back view of a managed resource.
@@ -113,7 +120,13 @@ type APIError struct {
 	Status  int
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	body    string
+	// Reason is the typed stop reason an error carries when it has one (a
+	// biome install's refused consent names why it stopped); empty otherwise.
+	Reason string `json:"reason"`
+	// Stage is when a biome install's consent refusal happened, `before-run`
+	// or `after-run`; empty when the server does not report it.
+	Stage string `json:"stage"`
+	body  string
 }
 
 func (e *APIError) Error() string {
@@ -127,7 +140,10 @@ func (c *Client) url(kind, id string) string {
 	if id == "" {
 		return fmt.Sprintf("%s/control-plane/resources/%s", c.endpoint, kind)
 	}
-	return fmt.Sprintf("%s/control-plane/resources/%s/%s", c.endpoint, kind, id)
+	// The id is one path segment: a composite id (a role assignment's
+	// `<roleId>:<subjectKind>:<subjectRef>`) may hold characters a path
+	// segment cannot carry raw, so it is escaped.
+	return fmt.Sprintf("%s/control-plane/resources/%s/%s", c.endpoint, kind, neturl.PathEscape(id))
 }
 
 func (c *Client) do(ctx context.Context, method, kind, id string, body any, out any) error {
@@ -142,6 +158,11 @@ func (c *Client) installationOrgURL(id string) string {
 }
 
 func (c *Client) doURL(ctx context.Context, method, url string, body any, out any) error {
+	return c.doURLWithHeaders(ctx, method, url, nil, body, out)
+}
+
+// doURLWithHeaders is doURL with extra request headers (an Idempotency-Key).
+func (c *Client) doURLWithHeaders(ctx context.Context, method, url string, headers map[string]string, body any, out any) error {
 	if c.orgPending {
 		return fmt.Errorf("the provider org is not known yet; it cannot be used before apply")
 	}
@@ -163,6 +184,9 @@ func (c *Client) doURL(ctx context.Context, method, url string, body any, out an
 		req.Header.Set(orgHeader, c.org)
 	}
 	req.Header.Set("Accept", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -185,9 +209,30 @@ func (c *Client) doURL(ctx context.Context, method, url string, body any, out an
 	}
 
 	if out != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("decode response: %w", err)
-		}
+		return decodeData(raw, out)
+	}
+	return nil
+}
+
+// dataEnvelope is the success envelope every control-plane-api route answers
+// with: {"data": <payload>}. Errors are not enveloped (see APIError).
+type dataEnvelope struct {
+	Data json.RawMessage `json:"data"`
+}
+
+// decodeData unwraps the control-plane success envelope into out. A body with no
+// `data` member is refused: a bare payload would otherwise decode to empty
+// fields and taint state silently.
+func decodeData(raw []byte, out any) error {
+	var env dataEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fmt.Errorf("decode response envelope: %w", err)
+	}
+	if len(env.Data) == 0 {
+		return fmt.Errorf("decode response: missing the {\"data\": ...} envelope")
+	}
+	if err := json.Unmarshal(env.Data, out); err != nil {
+		return fmt.Errorf("decode response data: %w", err)
 	}
 	return nil
 }
@@ -244,6 +289,36 @@ func (c *Client) Delete(ctx context.Context, kind, id string) error {
 	return c.do(ctx, http.MethodDelete, kind, id, nil, nil)
 }
 
+// RotatedCredential is the answer to a service principal credential rotation.
+// ClientSecret is a secret delivered once; Replayed is true when the service
+// answered an idempotent replay (in which case it holds no secret).
+type RotatedCredential struct {
+	CredentialRevision int64  `json:"credentialRevision"`
+	ClientID           string `json:"clientId"`
+	TokenEndpoint      string `json:"tokenEndpoint"`
+	ClientSecret       string `json:"clientSecret"`
+	Replayed           bool   `json:"replayed"`
+}
+
+type credentialRotationBody struct {
+	OverlapSeconds int64 `json:"overlapSeconds"`
+}
+
+// RotateServicePrincipalCredential issues a new client secret for a service
+// principal (POST /control-plane/resources/service-principal/:id/credential-rotations).
+// The previous secret stays valid for overlapSeconds. The idempotency key makes a
+// retried request answer a replay, which carries no secret (the service refuses
+// it with SERVICE_PRINCIPAL_SECRET_NOT_DELIVERED).
+func (c *Client) RotateServicePrincipalCredential(ctx context.Context, id string, overlapSeconds int64, idempotencyKey string) (*RotatedCredential, error) {
+	var out RotatedCredential
+	u := c.url("service-principal", id) + "/credential-rotations"
+	headers := map[string]string{"Idempotency-Key": idempotencyKey}
+	if err := c.doURLWithHeaders(ctx, http.MethodPost, u, headers, credentialRotationBody{OverlapSeconds: overlapSeconds}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // CreateInstallationOrg creates an org on the installation surface
 // (POST /control-plane/installation/orgs). It needs a platform_admin token; the
 // org header is sent but ignored by the route.
@@ -286,6 +361,16 @@ func IsNotFound(err error) bool {
 		apiErr = e
 	}
 	return apiErr != nil && apiErr.Status == http.StatusNotFound
+}
+
+// AsAPIError returns the control-plane error carrying code, or nil when err is
+// not one.
+func AsAPIError(err error, code string) *APIError {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == code {
+		return apiErr
+	}
+	return nil
 }
 
 // IsConflict reports whether err is an APIError with a 409 status, which the

@@ -14,9 +14,9 @@ fallback.
 
 | Attribute  | Env var          | Description                                   |
 | ---------- | ---------------- | --------------------------------------------- |
-| `endpoint` | `XEMA_ENDPOINT`  | Control-plane-api base URL.                   |
+| `endpoint` | `XEMA_ENDPOINT`  | Control-plane-api base URL behind the installation's API gateway, `https://api.<installation-domain>/api/control-plane-api` (dev: `https://api.dev.xema.dev/api/control-plane-api`). The provider appends `/control-plane/...` itself. |
 | `org`      | `XEMA_ORG`       | Xema organization id (optional; omit for operator mode). |
-| `token`    | `XEMA_TOKEN`     | Bearer token (sensitive): org-admin, or platform-admin in operator mode. |
+| `token`    | `XEMA_TOKEN`     | Bearer token (sensitive): org-admin, or platform-admin in operator mode. A pipeline's own service-principal token works for `xema_biome_install` (see below). |
 
 ```hcl
 terraform {
@@ -28,9 +28,63 @@ terraform {
 }
 
 provider "xema" {
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   org      = "org_123"
   token    = var.xema_token
+}
+```
+
+### A pipeline's service-principal token
+
+A pipeline can apply `xema_biome_install` with its own service-principal token
+instead of a person's: set `org` (the provider sends it as `X-Xema-Org-Id`) and
+pass the token through `XEMA_TOKEN` from the pipeline's secret store, never in
+the configuration. The control plane admits it for biome installs only; every
+other kind still needs an org-admin person token, and assigning roles refuses a
+service token by design. The service needs two grants in that org:
+
+- `biome:install@1`, held through a role with an `org` grant, to be admitted
+  at all (without it the install is refused with
+  `service-principal-lacks-install`);
+- `authorization:installation-consent.decide@1`, held through a role, to give
+  consent (`accept_permissions = true`).
+
+An org admin declares the two roles and their `xema_role_assignment`s once,
+with a person's credential (`examples/main.tf` declares both:
+`xema_role.biome_installer` and `xema_role.consent_decider`, each assigned to
+`var.pipeline_principal_id`).
+
+The provider takes a ready bearer token; it mints none. The pipeline gets one
+with the OAuth client-credentials grant against the principal's
+`token_endpoint`, and **must ask for the control plane's audience**:
+`scope=audience:platform`. A service principal's Keycloak client carries its
+exact audience only as an optional client scope, by design, so a token
+requested without that scope has no control-plane audience and every call is
+refused with 401. (`platform` is the trust-domain audience control-plane-api
+accepts, and the audience a service principal's credential is issued for in
+the default realm.)
+
+```bash
+# XEMA_CLIENT_ID, XEMA_CLIENT_SECRET and XEMA_TOKEN_ENDPOINT come from the CI secret store.
+XEMA_TOKEN="$(curl -fsS "$XEMA_TOKEN_ENDPOINT" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode client_id="$XEMA_CLIENT_ID" \
+  --data-urlencode client_secret="$XEMA_CLIENT_SECRET" \
+  --data-urlencode scope=audience:platform | jq -r .access_token)"
+export XEMA_TOKEN
+```
+
+`config_json`, `connections` and `resources` are optional: unset means none
+(`{}`, `[]`, `[]`), so a biome that takes no configuration names only
+`biome_id`.
+
+```hcl
+# In the pipeline: XEMA_ENDPOINT, XEMA_ORG and XEMA_TOKEN (the service token) come from the environment.
+provider "xema" {}
+
+resource "xema_biome_install" "slack" {
+  biome_id           = "slack-connector"
+  accept_permissions = true
 }
 ```
 
@@ -50,7 +104,7 @@ is the created org's id.
 ```hcl
 provider "xema" {
   alias    = "operator"
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   token    = var.platform_admin_token
 }
 
@@ -61,7 +115,7 @@ resource "xema_org" "acme" {
 }
 
 provider "xema" {
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   org      = xema_org.acme.id
   token    = var.org_admin_token
 }
@@ -92,10 +146,12 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_model_strategy`           | `model-strategy`        | llm-registry-api      |
 | `xema_model_resolution_rule`    | `model-resolution-rule` | llm-registry-api      |
 | `xema_org_model_default`        | `org-model-default`     | llm-registry-api      |
+| `xema_directory_binding`        | `directory-binding`     | identity-api          |
 | `xema_agent`                    | `agent`                 | llm-registry-api      |
 | `xema_skill`                    | `skill`                 | skill-registry-api    |
 | `xema_role`                     | `role`                  | authorization-api     |
-| `xema_grant`                    | `grant`                 | authorization-api     |
+| `xema_role_assignment`          | `role-assignment`       | authorization-api     |
+| `xema_service_principal`        | `service-principal`     | identity-api          |
 | `xema_team`                     | `team`                  | authorization-api     |
 | `xema_environment`              | `environment`           | authorization-api     |
 | `xema_space`                    | `space`                 | space-registry-api    |
@@ -124,6 +180,12 @@ or key-order differences never show as drift.
 > **`xema_model_resolution_rule`**, which declares an org-level rule only.
 > **`xema_org_model_default`** is the organization's one default model: one per
 > org, set by `model_id`, and destroying it unsets the default.
+> **`xema_directory_binding`** is the organization's one external-directory binding
+> (id is the org id; import with it): `provider_ref`, `application_client_id`, a
+> `member_claim` (`GROUP` or `APP_ROLE`, with at least one value) and an optional
+> `role_map` of claim value to org role (`org_owner`, `org_admin`, `org_member`).
+> Any change updates it in place; an empty `role_map` reads as unset, and
+> destroying it removes the binding but leaves memberships untouched.
 > **`xema_public_exposure`** (and `data.xema_public_exposure`, which takes no `id`) is the installation's one public-exposure setting
 > (id `installation`; import with that id): the hosts and path prefixes that
 > expose public operations, and their CORS origins. Only the installation owner
@@ -132,7 +194,56 @@ or key-order differences never show as drift.
 > are read-only. Destroying it only stops Terraform managing the setting: the
 > installation's exposure is left as last written, never reset.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
-> the pinned biome version is service-managed and is not a declarable field.
+> the pinned biome version is service-managed and is not a declarable field, and
+> changing `biome_id` replaces the install. The control plane plans the install,
+> gives the grant consent the plan asks for when `accept_permissions = true`
+> (through the credential's own consent door), and runs the install bound to
+> that plan. Unset means false: an install whose plan needs consent is then
+> refused before it runs (`CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSED`, with its
+> stop reason), and the error says to set `accept_permissions = true`. A grant
+> set that changed since it was planned is never approved unseen; review it and
+> apply again. The refusal's `stage` says whether the install ran: `after-run`
+> (or the reason `after-run-consent-not-given`) means its installation exists
+> but is unconfigured, and the error says to import or remove it; with no stage
+> (an older control plane) the outcome is unknown, so check whether the
+> installation exists. Reasons name their remedy: `not-authorized` (give the
+> credential a role holding `authorization:installation-consent.decide@1`),
+> `installation-read-not-authorized` (allow it to read the org's biome
+> installations on Biome Host), `not-authenticated` (renew the token),
+> `unavailable` (retry), and a consent that moved or was settled (apply again);
+> any other reason is quoted as sent.
+> `CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED` (502) is a consent
+> refusal control-plane could not map: report it; its stage reads the same way.
+> `accept_permissions` acts only when the install is created: changing it on an
+> existing install updates nothing. It is intent only: it is never read back, so
+> it never reads as drift, an import leaves it unset, and changing it never
+> replaces the install. The `xema_biome_install` data source does not expose it.
+> **`xema_role`** declares a custom role and its complete `grants` set (each a
+> `capability` such as `authorization:installation-consent.decide@1`, an
+> `environment` such as `org`, and optional `requires_approval`, `constraints`
+> and `where`). The provider always sends `grants`: leaving it unset declares
+> the empty set, so apply withdraws every grant the role holds, including ones
+> added outside Terraform. Who holds the role is not part of it.
+> **`xema_role_assignment`** assigns one role to one subject in the org
+> (`role_id`, `subject_kind` such as `service` or `user`, `subject_ref`). Every
+> attribute replaces it; its id is `<role_id>:<subject_kind>:<subject_ref>`
+> (import with that), and destroying one that is already gone succeeds. The
+> credential running Terraform must be a person's (an org admin who may confer
+> the role): the role-assignment route refuses a service token by design, so a
+> pipeline never assigns roles, its own included.
+> **`xema_service_principal`** creates a machine identity with an OAuth client
+> (`client_id`, `token_endpoint`, `client_secret`). `name` (lowercase, digits and
+> `-`, at most 40 characters), `display_name` and `description` replace it on any
+> change; changing `rotation_trigger` rotates the client secret in place (the old
+> one stays valid for `rotation_overlap_seconds`, 30 to 86400, default 300).
+> **The client secret is returned by the service once and IS stored in Terraform
+> state as a sensitive value, so the state backend is a secret store: encrypt it
+> and restrict access to it.** Write the secret straight into your CI secret store
+> (for example a `github_actions_secret` or a Key Vault secret resource), not into
+> an output. Give a pipeline's principal roles that confer no authority: assigning
+> roles needs a person's token (see `xema_role_assignment`). Import by principal
+> id; an imported principal has a null `client_secret`, so rotate to obtain one.
+> A create or rotation that returns no secret is an error, never an empty secret.
 > **`xema_space`** updates `classification` in place; changing `ref`,
 > `display_name`, or `labels` forces replacement (the owning service's update is
 > classification-only).
@@ -146,6 +257,17 @@ Every kind also has a matching **data source** (`data.xema_<kind>`) for
 read-by-id lookups: the `id` is the only input and every spec field is exposed
 as a computed attribute.
 
+### Breaking changes in v0.6.0
+
+`xema_grant` and `data.xema_grant` are removed. Declare a `xema_role` with the
+capability in its `grants` and assign it with `xema_role_assignment`. Before
+upgrading, run `terraform state rm` on every `xema_grant` resource and
+`data.xema_grant` address, or the new provider cannot read the old state.
+
+`xema_service_principal` needs a person's org-admin token: a service token is
+refused. A principal still `REVOKING` keeps its name, so re-creating the same
+name right after a destroy can conflict until revocation finishes.
+
 ### Distribution locks are not a provider concern
 
 The provider publishes no distribution lock.
@@ -157,6 +279,16 @@ Tagging `vX.Y.Z` runs `.github/workflows/release.yml` (goreleaser) and attaches
 to the GitHub release: `terraform-provider-xema_<ver>_<os>_<arch>.zip` for
 linux and darwin on amd64 and arm64, `terraform-provider-xema_<ver>_SHA256SUMS`,
 and `terraform-provider-xema_<ver>_manifest.json`.
+
+**Not on the public Terraform Registry.** `registry.terraform.io/xema-dev/xema`
+answers 404: the provider has never been published there, so `terraform init`
+finds it only through the filesystem mirror below. Publishing needs, all from
+the owner of the `xema-dev` GitHub org: the repository named
+`terraform-provider-xema` (the Registry accepts only `terraform-provider-<name>`
+repositories), a GPG signing key whose public half is added to the `xema-dev`
+namespace on the Registry and whose private half signs `SHA256SUMS` in the
+release workflow, and the provider added on registry.terraform.io from that
+repository. Until then, use the mirror.
 
 **Not signed.** There is no public Terraform Registry listing and no GPG key,
 so goreleaser's usual GPG signature of `SHA256SUMS` is left out. Integrity is

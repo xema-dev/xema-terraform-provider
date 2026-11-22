@@ -5,7 +5,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -150,10 +149,10 @@ func TestPublicExposureRequestCarriesTheOrgHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, recordedCall{r.Method, r.URL.Path, r.Header.Get("X-Xema-Org-Id"), r.Header.Get("Authorization")})
 		if r.Method == http.MethodPost {
-			_ = json.NewEncoder(w).Encode(client.Handle{Kind: publicExposureKind, PhysicalID: publicExposureID, ManagedKey: publicExposureID})
+			writeData(w, client.Handle{Kind: publicExposureKind, PhysicalID: publicExposureID, ManagedKey: publicExposureID})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(client.Resource{
+		writeData(w, client.Resource{
 			Kind: publicExposureKind, PhysicalID: publicExposureID,
 			Spec:   map[string]any{"entries": []any{}},
 			Status: map[string]any{"configured": true, "revision": 1},

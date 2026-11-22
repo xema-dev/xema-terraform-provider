@@ -21,7 +21,10 @@ import (
 // Terraform as an inconsistent result after apply.
 var notServerFilled = map[string]string{
 	"xema_provider.api_key":                              "write-only secret: the API never returns it",
-	"xema_grant.resource_glob":                           "retired: the control plane refuses a declaration carrying it",
+	"xema_biome_install.accept_permissions":              "operator intent sent with the install: the server never reports it, so the read-back keeps the configured value",
+	"xema_role.grants":                                   "the declaration is the whole grant set: unset sends the empty set, and the read-back keeps the declared value wherever the server's means the same",
+	"xema_service_principal.description":                 "the author's text: the server stores what it is given, else nothing",
+	"xema_service_principal.rotation_trigger":            "a provider-side trigger the server never sees",
 	"xema_portal.subdomain":                              "retired: the control plane refuses a declaration carrying it",
 	"xema_model_resolution_rule.target_temperature":      "the rule's author sets it: the server stores what it is given, else null, and fills no default",
 	"xema_model_resolution_rule.target_reasoning_effort": "the rule's author sets it: the server stores what it is given, else null, and fills no default",
@@ -57,13 +60,15 @@ func TestOptionalAttributesAcceptTheServersValue(t *testing.T) {
 
 func TestIdentityAttributesPlanAReplacement(t *testing.T) {
 	identity := map[string][]string{
-		"xema_team":        {"slug"},
-		"xema_environment": {"slug", "kind"},
-		"xema_grant":       {"subject_kind", "subject_ref", "capability"},
-		"xema_role":        {"slug"},
-		"xema_skill":       {"slug", "scope", "kind", "parent_slug"},
-		"xema_portal":      {"slug"},
-		"xema_model":       {"provider_id", "model_id"},
+		"xema_biome_install":     {"biome_id"},
+		"xema_team":              {"slug"},
+		"xema_environment":       {"slug", "kind"},
+		"xema_role":              {"slug"},
+		"xema_role_assignment":   {"role_id", "subject_kind", "subject_ref"},
+		"xema_skill":             {"slug", "scope", "kind", "parent_slug"},
+		"xema_portal":            {"slug"},
+		"xema_service_principal": {"name", "display_name"},
+		"xema_model":             {"provider_id", "model_id"},
 	}
 	schemas := resourceSchemas(t)
 	for typeName, names := range identity {
@@ -146,28 +151,5 @@ func TestModelLeftUnsetTakesTheServersCapabilities(t *testing.T) {
 	}
 	if !m.Modalities.IsNull() {
 		t.Fatalf("modalities = %s, want null", m.Modalities)
-	}
-}
-
-func TestGrantLeftUnsetTakesTheServersApprovalFlag(t *testing.T) {
-	m := grantModel{
-		SubjectKind:      types.StringValue("group"),
-		SubjectRef:       types.StringValue("team-1"),
-		Capability:       types.StringValue("kb:page.read@1"),
-		Environment:      types.StringValue("org"),
-		RequiresApproval: types.BoolUnknown(),
-		Profile:          types.StringUnknown(),
-		Constraints:      jsontypes.NewNormalizedUnknown(),
-	}
-	spec, err := m.toSpec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, sent := spec["requiresApproval"]; sent {
-		t.Fatal("an unset requires_approval was sent")
-	}
-	m.applyReadback(map[string]any{"requiresApproval": false})
-	if m.RequiresApproval.IsUnknown() || m.RequiresApproval.ValueBool() {
-		t.Fatalf("requires_approval = %s, want false", m.RequiresApproval)
 	}
 }

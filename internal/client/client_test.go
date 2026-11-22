@@ -6,6 +6,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ func TestCreateSendsAuthAndOrgHeaders(t *testing.T) {
 		gotOrg = r.Header.Get("X-Xema-Org-Id")
 		gotPath = r.URL.Path
 		gotMethod = r.Method
-		_ = json.NewEncoder(w).Encode(Handle{Kind: "project", PhysicalID: "p-1", ManagedKey: "demo"})
+		writeData(w, Handle{Kind: "project", PhysicalID: "p-1", ManagedKey: "demo"})
 	}))
 	defer srv.Close()
 
@@ -92,11 +93,11 @@ func TestInstallationOrgMethodsUseInstallationPaths(t *testing.T) {
 		calls = append(calls, call{r.Method, r.URL.Path, org, r.Header.Get("Authorization")})
 		switch r.Method {
 		case http.MethodPost:
-			_ = json.NewEncoder(w).Encode(Handle{Kind: "org", PhysicalID: "o-1", ManagedKey: "acme"})
+			writeData(w, Handle{Kind: "org", PhysicalID: "o-1", ManagedKey: "acme"})
 		case http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+			writeData(w, Resource{Kind: "org", PhysicalID: "o-1"})
 		}
 	}))
 	defer srv.Close()
@@ -137,7 +138,7 @@ func TestOrgScopedCallsStillSendOrgHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotOrg = r.Header.Get("X-Xema-Org-Id")
 		gotPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+		writeData(w, Resource{Kind: "org", PhysicalID: "o-1"})
 	}))
 	defer srv.Close()
 
@@ -147,5 +148,111 @@ func TestOrgScopedCallsStillSendOrgHeader(t *testing.T) {
 	}
 	if gotOrg != "org-123" || gotPath != "/control-plane/resources/org/o-1" {
 		t.Errorf("org=%q path=%q", gotOrg, gotPath)
+	}
+}
+
+// writeData answers as control-plane-api does: the payload under {"data": ...}.
+func writeData(w http.ResponseWriter, payload any) {
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": payload})
+}
+
+func TestBareBodyIsRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(Resource{Kind: "org", PhysicalID: "o-1"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	if _, err := c.Read(context.Background(), "org", "o-1"); err == nil {
+		t.Fatal("a body without the data envelope must be an error, not empty fields")
+	}
+}
+
+func TestListUnwrapsTheDataArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeData(w, []Resource{{Kind: "project", PhysicalID: "p-1", ManagedKey: "demo"}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	got, err := c.ListByManagedKey(context.Background(), "project", "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].PhysicalID != "p-1" {
+		t.Fatalf("list = %+v", got)
+	}
+}
+
+func TestCreateDecodesOneTimeOutputs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeData(w, map[string]any{
+			"kind": "service-principal", "physicalId": "sp-1", "managedKey": "ci",
+			"oneTimeOutputs": map[string]string{
+				"clientId": "cid", "clientSecret": "s3cret", "tokenEndpoint": "https://t/token", "credentialRevision": "1",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	h, err := c.Create(context.Background(), "service-principal", map[string]any{"name": "ci"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.OneTimeOutputs["clientSecret"] != "s3cret" || h.OneTimeOutputs["clientId"] != "cid" ||
+		h.OneTimeOutputs["tokenEndpoint"] != "https://t/token" || h.OneTimeOutputs["credentialRevision"] != "1" {
+		t.Fatalf("one-time outputs = %#v", h.OneTimeOutputs)
+	}
+}
+
+func TestRotateServicePrincipalCredential(t *testing.T) {
+	var gotMethod, gotPath, gotKey, gotOrg, gotAuth string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotKey = r.Header.Get("Idempotency-Key")
+		gotOrg = r.Header.Get("X-Xema-Org-Id")
+		gotAuth = r.Header.Get("Authorization")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		writeData(w, map[string]any{
+			"credentialRevision": 2, "clientId": "cid", "tokenEndpoint": "https://t/token",
+			"clientSecret": "new-secret", "replayed": false,
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	got, err := c.RotateServicePrincipalCredential(context.Background(), "sp-1", 300, "key-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/control-plane/resources/service-principal/sp-1/credential-rotations" {
+		t.Errorf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotKey != "key-1" || gotOrg != "org-1" || gotAuth != "Bearer tok" {
+		t.Errorf("headers: key=%q org=%q auth=%q", gotKey, gotOrg, gotAuth)
+	}
+	if gotBody["overlapSeconds"] != float64(300) {
+		t.Errorf("body = %#v", gotBody)
+	}
+	if got.ClientSecret != "new-secret" || got.CredentialRevision != 2 || got.ClientID != "cid" ||
+		got.TokenEndpoint != "https://t/token" || got.Replayed {
+		t.Errorf("rotated = %+v", got)
+	}
+}
+
+func TestRotateServicePrincipalCredentialSurfacesTypedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"code": "SERVICE_PRINCIPAL_SECRET_NOT_DELIVERED", "message": "replayed"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "org-1", "tok", srv.Client())
+	_, err := c.RotateServicePrincipalCredential(context.Background(), "sp-1", 300, "key-1")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "SERVICE_PRINCIPAL_SECRET_NOT_DELIVERED" {
+		t.Fatalf("err = %v", err)
 	}
 }

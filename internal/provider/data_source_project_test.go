@@ -5,7 +5,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,14 +55,14 @@ func readProjectWithByID(t *testing.T, items []map[string]any, byID map[string]a
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/control-plane/resources/project" {
 			gotQuery = r.URL.Query().Get("managedKey")
-			_ = json.NewEncoder(w).Encode(items)
+			writeData(w, items)
 			return
 		}
 		if byID != nil {
-			_ = json.NewEncoder(w).Encode(byID)
+			writeData(w, byID)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		writeData(w, map[string]any{
 			"physicalId": "p-9", "managedKey": "forge:gim", "spec": map[string]any{"name": "gim"},
 		})
 	}))
