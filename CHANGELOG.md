@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `xema_biome_install`: `config_json`, `connections` and `resources` are
+  optional. Unset means none and is sent as `{}`, `[]` and `[]`, which the
+  control plane's install update requires, so a biome with no configuration
+  names only `biome_id`. Existing configurations are unchanged.
+- The example and README use the gateway endpoint
+  (`https://api.<installation-domain>/api/control-plane-api`) and declare the
+  `biome:install@1` role a pipeline's service identity needs, next to the
+  consent-decider role. The README says why the provider is not on the public
+  Terraform Registry and what publishing it takes.
 - **Breaking:** `xema_grant` and `data.xema_grant` are removed. Declare a
   `xema_role` with the grants and a `xema_role_assignment` instead. Before you
   upgrade, run `terraform state rm` on every `xema_grant` and

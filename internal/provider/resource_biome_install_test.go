@@ -13,9 +13,11 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	"github.com/xema-dev/xema-terraform-provider/internal/client"
@@ -479,5 +481,100 @@ func TestBiomeInstallConsentRefusedInstallationReadNotAuthorized(t *testing.T) {
 	}
 	if strings.Contains(d.Detail(), "accept_permissions") || strings.Contains(d.Detail(), "installation-consent.decide") {
 		t.Errorf("an installation read refusal is not fixed by accepting or the decide role: %q", d.Detail())
+	}
+}
+
+// A biome that takes no configuration installs from a block that names only
+// the biome: unset config_json, connections and resources are sent as none
+// (`{}`, `[]`, `[]`, as the control plane's install update requires all three)
+// and read back without an error.
+func TestBiomeInstallNamesOnlyTheBiome(t *testing.T) {
+	fake := fakeBiomeInstallControlPlane(t)
+	r := &biomeInstallResource{client: client.New(fake.URL, "org-1", "tok", fake.Client())}
+	sch, obj := biomeInstallSchema(t, r)
+	null := tftypes.NewValue(tftypes.String, nil)
+	plan := tftypes.NewValue(obj, map[string]tftypes.Value{
+		"id":                 tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"biome_id":           tftypes.NewValue(tftypes.String, "no-config-biome"),
+		"config_json":        null,
+		"connections":        null,
+		"resources":          null,
+		"accept_permissions": tftypes.NewValue(tftypes.Bool, nil),
+	})
+	resp := resource.CreateResponse{State: tfsdk.State{Schema: sch, Raw: tftypes.NewValue(obj, nil)}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: tfsdk.Plan{Schema: sch, Raw: plan}}, &resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("create: %v", resp.Diagnostics)
+	}
+	sent, err := json.Marshal(map[string]any{
+		"configJson": fake.sent["configJson"], "connections": fake.sent["connections"], "resources": fake.sent["resources"],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"configJson":{},"connections":[],"resources":[]}`; string(sent) != want {
+		t.Errorf("sent %s, want %s", sent, want)
+	}
+	got := stateAccept(t, resp.State)
+	if got.ConfigJson.ValueString() != "{}" || got.Connections.ValueString() != "[]" || got.Resources.ValueString() != "[]" {
+		t.Errorf("state = %#v, want the empty values read back", got)
+	}
+}
+
+// Terraform plans an unset config_json, connections or resources as its empty
+// value, so the plan matches what the create sends and reads back.
+func TestBiomeInstallPlansUnsetFieldsAsNone(t *testing.T) {
+	ctx := context.Background()
+	server, err := providerserver.NewProtocol6WithError(New("test")())()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, obj := biomeInstallSchema(t, &biomeInstallResource{})
+	null := tftypes.NewValue(tftypes.String, nil)
+	config := tftypes.NewValue(obj, map[string]tftypes.Value{
+		"id":                 null,
+		"biome_id":           tftypes.NewValue(tftypes.String, "no-config-biome"),
+		"config_json":        null,
+		"connections":        null,
+		"resources":          null,
+		"accept_permissions": tftypes.NewValue(tftypes.Bool, nil),
+	})
+	dyn := func(v tftypes.Value) *tfprotov6.DynamicValue {
+		d, err := tfprotov6.NewDynamicValue(obj, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &d
+	}
+	if _, err := server.GetProviderSchema(ctx, &tfprotov6.GetProviderSchemaRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := server.PlanResourceChange(ctx, &tfprotov6.PlanResourceChangeRequest{
+		TypeName:         "xema_biome_install",
+		PriorState:       dyn(tftypes.NewValue(obj, nil)),
+		ProposedNewState: dyn(config),
+		Config:           dyn(config),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range resp.Diagnostics {
+		if d.Severity == tfprotov6.DiagnosticSeverityError {
+			t.Fatalf("plan: %s: %s", d.Summary, d.Detail)
+		}
+	}
+	planned, err := resp.PlannedState.Unmarshal(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attrs map[string]tftypes.Value
+	if err := planned.As(&attrs); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{"config_json": "{}", "connections": "[]", "resources": "[]"} {
+		var got string
+		if err := attrs[key].As(&got); err != nil || got != want {
+			t.Errorf("planned %s = %v (%v), want %s", key, attrs[key], err, want)
+		}
 	}
 }

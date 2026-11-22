@@ -6,10 +6,16 @@ terraform {
   }
 }
 
+# The provider is not on the public Terraform Registry: install it from the
+# GitHub release through a filesystem mirror (README, "Installing from a release").
+#
 # Endpoint / org / token may also be supplied via the
-# XEMA_ENDPOINT / XEMA_ORG / XEMA_TOKEN environment variables.
+# XEMA_ENDPOINT / XEMA_ORG / XEMA_TOKEN environment variables. The endpoint is
+# the control-plane-api base URL behind the installation's API gateway,
+# https://api.<installation-domain>/api/control-plane-api (here the dev
+# installation); the provider appends /control-plane/resources/<kind> itself.
 provider "xema" {
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   org      = "org_123"
   token    = var.xema_token
 }
@@ -154,6 +160,30 @@ resource "xema_role_assignment" "pipeline_consent_decider" {
   subject_ref  = var.pipeline_principal_id
 }
 
+# A custom role holding the biome-install grant: a pipeline's service identity
+# must hold `biome:install@1` in the org to be admitted to `xema_biome_install`
+# at all (refused with `service-principal-lacks-install` otherwise).
+resource "xema_role" "biome_installer" {
+  slug         = "biome-installer"
+  display_name = "Biome installer"
+  description  = "May install biomes in this org."
+
+  grants = [
+    {
+      capability  = "biome:install@1"
+      environment = "org"
+    },
+  ]
+}
+
+# The pipeline's service identity holds that role too (a person's credential
+# applies this, like the assignment above).
+resource "xema_role_assignment" "pipeline_biome_installer" {
+  role_id      = xema_role.biome_installer.id
+  subject_kind = "service"
+  subject_ref  = var.pipeline_principal_id
+}
+
 # A pipeline's service principal. The client secret is returned once and is
 # stored in Terraform state as a sensitive value: keep the state backend
 # encrypted and access-restricted, and write the secret straight into the CI
@@ -190,13 +220,20 @@ resource "xema_deliverable_spec" "adr" {
 # install whose plan needs consent is refused before it runs. It acts only when
 # the install is created. Run from a pipeline, the provider's token can be the
 # pipeline's own service-principal token (with `org` set): that service must
-# hold `biome:install@1` in the org to be admitted at all, and the
-# consent-decide role assigned above to give consent.
+# hold the biome-installer role (`biome:install@1`) to be admitted at all, and
+# the consent-decider role to give consent; both are assigned above.
+# config_json, connections and resources are optional: unset means none.
 resource "xema_biome_install" "slack" {
   biome_id           = "slack-connector"
   config_json        = jsonencode({ defaultChannel = "#general" })
   connections        = jsonencode([{ adapterKind = "chat", orgConnectionId = "oi_123" }])
   resources          = jsonencode([{ adapterKind = "chat", selector = { team = "platform" } }])
+  accept_permissions = true
+}
+
+# A biome that takes no configuration and binds nothing names only the biome.
+resource "xema_biome_install" "no_config" {
+  biome_id           = "example-biome"
   accept_permissions = true
 }
 

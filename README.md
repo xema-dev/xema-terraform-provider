@@ -14,7 +14,7 @@ fallback.
 
 | Attribute  | Env var          | Description                                   |
 | ---------- | ---------------- | --------------------------------------------- |
-| `endpoint` | `XEMA_ENDPOINT`  | Control-plane-api base URL.                   |
+| `endpoint` | `XEMA_ENDPOINT`  | Control-plane-api base URL behind the installation's API gateway, `https://api.<installation-domain>/api/control-plane-api` (dev: `https://api.dev.xema.dev/api/control-plane-api`). The provider appends `/control-plane/...` itself. |
 | `org`      | `XEMA_ORG`       | Xema organization id (optional; omit for operator mode). |
 | `token`    | `XEMA_TOKEN`     | Bearer token (sensitive): org-admin, or platform-admin in operator mode. A pipeline's own service-principal token works for `xema_biome_install` (see below). |
 
@@ -28,7 +28,7 @@ terraform {
 }
 
 provider "xema" {
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   org      = "org_123"
   token    = var.xema_token
 }
@@ -43,13 +43,20 @@ the configuration. The control plane admits it for biome installs only; every
 other kind still needs an org-admin person token, and assigning roles refuses a
 service token by design. The service needs two grants in that org:
 
-- `biome:install@1`, to be admitted at all (without it the install is refused
-  with `service-principal-lacks-install`);
+- `biome:install@1`, held through a role with an `org` grant, to be admitted
+  at all (without it the install is refused with
+  `service-principal-lacks-install`);
 - `authorization:installation-consent.decide@1`, held through a role, to give
   consent (`accept_permissions = true`).
 
-An org admin declares the roles and their `xema_role_assignment`s once, with a
-person's credential.
+An org admin declares the two roles and their `xema_role_assignment`s once,
+with a person's credential (`examples/main.tf` declares both:
+`xema_role.biome_installer` and `xema_role.consent_decider`, each assigned to
+`var.pipeline_principal_id`).
+
+`config_json`, `connections` and `resources` are optional: unset means none
+(`{}`, `[]`, `[]`), so a biome that takes no configuration names only
+`biome_id`.
 
 ```hcl
 # In the pipeline: XEMA_ENDPOINT, XEMA_ORG and XEMA_TOKEN (the service token) come from the environment.
@@ -57,9 +64,6 @@ provider "xema" {}
 
 resource "xema_biome_install" "slack" {
   biome_id           = "slack-connector"
-  config_json        = jsonencode({})
-  connections        = jsonencode([])
-  resources          = jsonencode([])
   accept_permissions = true
 }
 ```
@@ -80,7 +84,7 @@ is the created org's id.
 ```hcl
 provider "xema" {
   alias    = "operator"
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   token    = var.platform_admin_token
 }
 
@@ -91,7 +95,7 @@ resource "xema_org" "acme" {
 }
 
 provider "xema" {
-  endpoint = "https://control-plane.xema.dev"
+  endpoint = "https://api.dev.xema.dev/api/control-plane-api"
   org      = xema_org.acme.id
   token    = var.org_admin_token
 }
@@ -255,6 +259,16 @@ Tagging `vX.Y.Z` runs `.github/workflows/release.yml` (goreleaser) and attaches
 to the GitHub release: `terraform-provider-xema_<ver>_<os>_<arch>.zip` for
 linux and darwin on amd64 and arm64, `terraform-provider-xema_<ver>_SHA256SUMS`,
 and `terraform-provider-xema_<ver>_manifest.json`.
+
+**Not on the public Terraform Registry.** `registry.terraform.io/xema-dev/xema`
+answers 404: the provider has never been published there, so `terraform init`
+finds it only through the filesystem mirror below. Publishing needs, all from
+the owner of the `xema-dev` GitHub org: the repository named
+`terraform-provider-xema` (the Registry accepts only `terraform-provider-<name>`
+repositories), a GPG signing key whose public half is added to the `xema-dev`
+namespace on the Registry and whose private half signs `SHA256SUMS` in the
+release workflow, and the provider added on registry.terraform.io from that
+repository. Until then, use the mirror.
 
 **Not signed.** There is no public Terraform Registry listing and no GPG key,
 so goreleaser's usual GPG signature of `SHA256SUMS` is left out. Integrity is

@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -33,6 +34,15 @@ const (
 	biomeInstallConsentRefusalUnmappedCode = "CONTROL_PLANE_BIOME_INSTALL_CONSENT_REFUSAL_UNMAPPED"
 	// biomeInstallSpecInvalidCode: the spec's `acceptPermissions` is not a boolean.
 	biomeInstallSpecInvalidCode = "CONTROL_PLANE_BIOME_INSTALL_SPEC_INVALID"
+)
+
+// The values an unset config_json, connections or resources stands for. The
+// control plane's install update requires all three (an object and two
+// arrays) and replaces them wholesale, so "none" is sent as an empty value,
+// never omitted.
+const (
+	emptyJSONObject = "{}"
+	emptyJSONArray  = "[]"
 )
 
 var (
@@ -91,19 +101,25 @@ func (r *biomeInstallResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 			"config_json": schema.StringAttribute{
-				Required:    true,
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString(emptyJSONObject),
 				CustomType:  jsontypes.NormalizedType{},
-				Description: "Install configuration as a JSON object.",
+				Description: "Install configuration as a JSON object. Optional: unset means none (`{}`), for a biome that takes no configuration.",
 			},
 			"connections": schema.StringAttribute{
-				Required:    true,
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString(emptyJSONArray),
 				CustomType:  jsontypes.NormalizedType{},
-				Description: "Bound org connections as a JSON array of { adapterKind, orgConnectionId }.",
+				Description: "Bound org connections as a JSON array of { adapterKind, orgConnectionId }. Optional: unset means none (`[]`).",
 			},
 			"resources": schema.StringAttribute{
-				Required:    true,
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString(emptyJSONArray),
 				CustomType:  jsontypes.NormalizedType{},
-				Description: "Bound resources as a JSON array of { adapterKind, selector }.",
+				Description: "Bound resources as a JSON array of { adapterKind, selector }. Optional: unset means none (`[]`).",
 			},
 			"accept_permissions": schema.BoolAttribute{
 				Optional: true,
@@ -127,28 +143,24 @@ func (m biomeInstallModel) toSpec() (map[string]any, error) {
 		"biomeId": m.BiomeID.ValueString(),
 	}
 
-	configJson, err := normalizedToValue(m.ConfigJson)
-	if err != nil {
-		return nil, err
-	}
-	if configJson != nil {
-		spec["configJson"] = configJson
-	}
-
-	connections, err := normalizedToValue(m.Connections)
-	if err != nil {
-		return nil, err
-	}
-	if connections != nil {
-		spec["connections"] = connections
-	}
-
-	resources, err := normalizedToValue(m.Resources)
-	if err != nil {
-		return nil, err
-	}
-	if resources != nil {
-		spec["resources"] = resources
+	for _, field := range []struct {
+		key   string
+		value jsontypes.Normalized
+		empty string
+	}{
+		{"configJson", m.ConfigJson, emptyJSONObject},
+		{"connections", m.Connections, emptyJSONArray},
+		{"resources", m.Resources, emptyJSONArray},
+	} {
+		value := field.value
+		if value.IsNull() || value.IsUnknown() || value.ValueString() == "" {
+			value = jsontypes.NewNormalizedValue(field.empty)
+		}
+		parsed, err := normalizedToValue(value)
+		if err != nil {
+			return nil, err
+		}
+		spec[field.key] = parsed
 	}
 
 	// Sent only when set: absent means false to the control plane.
