@@ -54,6 +54,26 @@ with a person's credential (`examples/main.tf` declares both:
 `xema_role.biome_installer` and `xema_role.consent_decider`, each assigned to
 `var.pipeline_principal_id`).
 
+The provider takes a ready bearer token; it mints none. The pipeline gets one
+with the OAuth client-credentials grant against the principal's
+`token_endpoint`, and **must ask for the control plane's audience**:
+`scope=audience:platform`. A service principal's Keycloak client carries its
+exact audience only as an optional client scope, by design, so a token
+requested without that scope has no control-plane audience and every call is
+refused with 401. (`platform` is the trust-domain audience control-plane-api
+accepts, and the audience a service principal's credential is issued for in
+the default realm.)
+
+```bash
+# XEMA_CLIENT_ID, XEMA_CLIENT_SECRET and XEMA_TOKEN_ENDPOINT come from the CI secret store.
+XEMA_TOKEN="$(curl -fsS "$XEMA_TOKEN_ENDPOINT" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode client_id="$XEMA_CLIENT_ID" \
+  --data-urlencode client_secret="$XEMA_CLIENT_SECRET" \
+  --data-urlencode scope=audience:platform | jq -r .access_token)"
+export XEMA_TOKEN
+```
+
 `config_json`, `connections` and `resources` are optional: unset means none
 (`{}`, `[]`, `[]`), so a biome that takes no configuration names only
 `biome_id`.

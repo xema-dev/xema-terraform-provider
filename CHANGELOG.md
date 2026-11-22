@@ -9,7 +9,8 @@
 - The example and README use the gateway endpoint
   (`https://api.<installation-domain>/api/control-plane-api`) and declare the
   `biome:install@1` role a pipeline's service identity needs, next to the
-  consent-decider role. The README says why the provider is not on the public
+  consent-decider role, and say a pipeline's client-credentials token must
+  request `scope=audience:platform` (else 401). The README says why the provider is not on the public
   Terraform Registry and what publishing it takes.
 - **Breaking:** `xema_grant` and `data.xema_grant` are removed. Declare a
   `xema_role` with the grants and a `xema_role_assignment` instead. Before you

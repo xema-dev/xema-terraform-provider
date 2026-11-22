@@ -189,6 +189,12 @@ resource "xema_role_assignment" "pipeline_biome_installer" {
 # encrypted and access-restricted, and write the secret straight into the CI
 # secret store (a github_actions_secret or Key Vault secret resource), never
 # into an output. Bump rotation_trigger to rotate the secret in place.
+#
+# The pipeline turns client_id / client_secret into the provider's XEMA_TOKEN
+# with the client-credentials grant at token_endpoint, and must request
+# `scope=audience:platform` (the control plane's audience). The principal's
+# client holds that audience only as an optional scope, so a token minted
+# without it is refused with 401 (README, "A pipeline's service-principal token").
 resource "xema_service_principal" "pipeline" {
   name             = "ci-pipeline"
   display_name     = "CI pipeline"
