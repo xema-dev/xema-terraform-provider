@@ -156,7 +156,7 @@ func TestOrgSettingCreateReadDeleteClearsTheValue(t *testing.T) {
 
 // ---- credential binding ----
 
-func bindingModel(version, secret string) credentialBindingModel {
+func bindingModel(version, _ string) credentialBindingModel {
 	return credentialBindingModel{
 		ID:                  types.StringValue("cb-1"),
 		ScopeTier:           types.StringValue("org"),
@@ -167,7 +167,7 @@ func bindingModel(version, secret string) credentialBindingModel {
 		AllowedCapabilities: strList("llm.invoke"),
 		AllowedActions:      strList("invoke"),
 		AllowedResources:    strList("*"),
-		SecretValue:         types.StringValue(secret),
+		SecretValue:         types.StringNull(),
 		SecretVersion:       types.StringValue(version),
 		ProviderKey:         types.StringValue("k"),
 		Version:             types.Int64Value(1),
@@ -179,6 +179,9 @@ func TestCredentialBindingSchemaShape(t *testing.T) {
 	if !sch.Attributes["secret_value"].IsSensitive() {
 		t.Error("`secret_value` must be sensitive")
 	}
+	if !sch.Attributes["secret_value"].IsWriteOnly() {
+		t.Error("`secret_value` must be write-only: never in plan or state")
+	}
 	for _, name := range []string{"scope_tier", "project_id", "auth_type", "llm_provider"} {
 		if _, ok := sch.Attributes[name]; !ok {
 			t.Errorf("schema is missing %s", name)
@@ -187,7 +190,8 @@ func TestCredentialBindingSchemaShape(t *testing.T) {
 }
 
 func TestCredentialBindingSpecSendsTheSecretOnlyWhenAsked(t *testing.T) {
-	m := bindingModel("v1", "fake-secret")
+	m := bindingModel("v1", "")
+	m.SecretValue = types.StringValue("fake-secret")
 	if _, ok := m.toSpec(false)["secretValue"]; ok {
 		t.Error("secretValue must not be sent when withSecret is false")
 	}
@@ -217,11 +221,19 @@ func TestCredentialBindingUpdateRotatesOnlyWhenTheVersionChanges(t *testing.T) {
 
 	run := func(version string) {
 		t.Helper()
+		cfg := bindingModel(version, "")
+		cfg.SecretValue = types.StringValue("fake-secret")
 		resp := resource.UpdateResponse{State: state}
 		r.Update(ctx, resource.UpdateRequest{
-			Plan:  tfsdk.Plan{Schema: sch, Raw: stateFrom(t, sch, bindingModel(version, "fake-secret")).Raw},
-			State: state,
+			Config: tfsdk.Config{Schema: sch, Raw: stateFrom(t, sch, cfg).Raw},
+			Plan:   tfsdk.Plan{Schema: sch, Raw: stateFrom(t, sch, bindingModel(version, "")).Raw},
+			State:  state,
 		}, &resp)
+		var got credentialBindingModel
+		resp.State.Get(ctx, &got)
+		if !got.SecretValue.IsNull() {
+			t.Error("the secret must never reach state")
+		}
 		if resp.Diagnostics.HasError() {
 			t.Fatalf("update: %v", resp.Diagnostics)
 		}
@@ -258,7 +270,7 @@ func TestCredentialBindingDeleteIsIdempotent(t *testing.T) {
 func TestCredentialBindingReadbackKeepsConfigOnlyFields(t *testing.T) {
 	m := bindingModel("v1", "fake-secret")
 	m.applyReadback(&client.Resource{PhysicalID: "cb-1", Spec: map[string]any{"scopeTier": "org", "authType": "bearer"}})
-	if m.LLMProvider == nil || m.SecretValue.ValueString() != "fake-secret" || m.SecretVersion.ValueString() != "v1" {
+	if m.LLMProvider == nil || m.SecretVersion.ValueString() != "v1" {
 		t.Errorf("read-back must not touch llm_provider, secret_value or secret_version: %+v", m)
 	}
 }

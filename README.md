@@ -179,10 +179,10 @@ or key-order differences never show as drift.
 > setting reverts to its declaration or default.
 > **`xema_credential_binding`** is a sealed LLM provider key with its allow-lists
 > (id: the broker's binding id; import with it). `secret_value` is sensitive and
-> is sent only on create and when `secret_version` changes, so a re-apply never
-> rotates; change both to rotate. This framework version has no write-only
-> attributes, so Terraform still keeps the configured secret in state, and the
-> state backend holds a secret. `llm_provider` is config-only (never read back).
+> write-only: it is read from the configuration only and never stored in plan or
+> state (needs Terraform 1.11 or later). It is sent on create and when
+> `secret_version` changes, so a re-apply never rotates; change both to rotate.
+> `llm_provider` is config-only (never read back).
 > A changed scope, project, auth type or provider replaces the binding; destroying
 > it revokes it, and an already revoked binding destroys cleanly.
 > **`xema_credential_default`** points an org's or project's provider at a

@@ -67,7 +67,7 @@ func llmProviderAttribute(description string) schema.SingleNestedAttribute {
 }
 
 // credentialBindingModel mirrors the credential-binding kind. secret_value is
-// write-only on the wire: the server never returns it.
+// write-only: read from the config on create and update, null in plan and state.
 type credentialBindingModel struct {
 	ID                  types.String      `tfsdk:"id"`
 	ScopeTier           types.String      `tfsdk:"scope_tier"`
@@ -137,11 +137,11 @@ func (r *credentialBindingResource) Schema(_ context.Context, _ resource.SchemaR
 			"secret_value": schema.StringAttribute{
 				Required:  true,
 				Sensitive: true,
-				Description: "The provider key. Sensitive and write-only on the wire: it is sent on create and " +
-					"when `secret_version` changes, and the service never returns it. This provider's " +
-					"framework version has no write-only attribute support, so Terraform still keeps the " +
-					"configured value in state (as `xema_provider.api_key` does): the state backend holds a " +
-					"secret. Changing this value alone never rotates the secret; change `secret_version`.",
+				WriteOnly: true,
+				Description: "The provider key. Sensitive and write-only: it is read from the configuration " +
+					"only, never stored in the plan or state, and the service never returns it. It is sent on " +
+					"create and when `secret_version` changes. Changing this value alone never rotates the " +
+					"secret; change `secret_version` too. Needs Terraform 1.11 or later.",
 			},
 			"secret_version": schema.StringAttribute{
 				Optional: true,
@@ -213,6 +213,7 @@ func (m *credentialBindingModel) applyReadback(res *client.Resource) {
 func (r *credentialBindingResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan credentialBindingModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("secret_value"), &plan.SecretValue)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -234,6 +235,7 @@ func (r *credentialBindingResource) finish(ctx context.Context, plan *credential
 		return
 	}
 	plan.applyReadback(res)
+	plan.SecretValue = types.StringNull() // write-only: never in state
 	diags.Append(set(plan)...)
 }
 
@@ -260,6 +262,7 @@ func (r *credentialBindingResource) Update(ctx context.Context, req resource.Upd
 	var plan, state credentialBindingModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("secret_value"), &plan.SecretValue)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
