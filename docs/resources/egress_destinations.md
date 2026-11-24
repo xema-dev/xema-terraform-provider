@@ -8,9 +8,9 @@ internet. One per installation (id `installation`), written only by the installa
 ```terraform
 # One policy per installation; only the installation owner may write it.
 resource "xema_egress_destinations" "installation" {
-  kind = "grants"
+  kind = "admitted"
   grants = jsonencode([
-    { host = "registry.internal.example" },
+    { kind = "host", host = "registry.internal.example", port = 443 },
   ])
 }
 

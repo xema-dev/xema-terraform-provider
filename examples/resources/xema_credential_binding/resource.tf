@@ -1,3 +1,8 @@
+variable "openai_key" {
+  type      = string
+  sensitive = true
+}
+
 resource "xema_credential_binding" "openai" {
   scope_tier = "org"
   llm_provider = {
