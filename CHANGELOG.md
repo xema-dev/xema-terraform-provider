@@ -10,6 +10,8 @@
   attribute (never in plan or state; needs Terraform 1.11 or later), sent only on
   create and when `secret_version` changes. Needs control-plane
   with these resource kinds (xema-base XEMA-10065).
+- XEMA-10065: `xema_connection` (a gateway connection bound to an existing
+  `xema_credential_binding` by `credential_binding_id`; import by id only).
 - `xema_provider.api_key` is deprecated: it retires once keys are enrolled
   through `xema_credential_binding` + `xema_credential_default`. It is not
   removed yet.

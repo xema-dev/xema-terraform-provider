@@ -401,3 +401,114 @@ func TestProviderAPIKeyIsDeprecatedTowardsCredentialResources(t *testing.T) {
 		t.Fatalf("api_key deprecation = %q", attr.DeprecationMessage)
 	}
 }
+
+// ---- connection ----
+
+func connectionModelFixture(endpoint string) connectionModel {
+	return connectionModel{
+		ID:                   types.StringValue("conn-1"),
+		Provider:             types.StringValue("github"),
+		Name:                 types.StringValue("main"),
+		ScopeTier:            types.StringValue("org"),
+		CredentialKind:       types.StringValue("model_provider"),
+		Endpoint:             types.StringValue(endpoint),
+		CredentialBindingID:  types.StringValue("cb-1"),
+		EndpointRevision:     types.Int64Value(1),
+		CredentialsSuspended: types.BoolValue(false),
+	}
+}
+
+func TestConnectionSchemaShape(t *testing.T) {
+	sch := schemaOf(t, NewConnectionResource())
+	for _, name := range []string{"provider_slug", "name", "scope_tier", "credential_kind", "credential_binding_id"} {
+		a, ok := sch.Attributes[name]
+		if !ok || !a.IsRequired() {
+			t.Errorf("%s must be a required attribute", name)
+		}
+	}
+	for name := range sch.Attributes {
+		if strings.Contains(name, "secret") {
+			t.Errorf("schema must carry no secret attribute, found %s", name)
+		}
+	}
+}
+
+func TestConnectionSpecMirrorsTheAdapter(t *testing.T) {
+	m := connectionModelFixture("https://api.example.test")
+	spec := m.toSpec()
+	want := map[string]any{
+		"provider": "github", "name": "main", "scopeTier": "org", "credentialKind": "model_provider",
+		"credentialBindingId": "cb-1", "endpoint": "https://api.example.test",
+	}
+	if len(spec) != len(want) {
+		t.Fatalf("spec = %v", spec)
+	}
+	for k, v := range want {
+		if spec[k] != v {
+			t.Errorf("spec[%s] = %v, want %v", k, spec[k], v)
+		}
+	}
+	m.Endpoint = types.StringNull()
+	if _, ok := m.toSpec()["endpoint"]; ok {
+		t.Error("an undeclared endpoint must not be sent")
+	}
+}
+
+func TestConnectionCreateReadsBackAndDeleteIs404Safe(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeKindServer(t, func(c seenCall, w http.ResponseWriter) {
+		switch c.Method {
+		case http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+			writeData(w, map[string]any{"kind": "connection", "physicalId": "conn-1", "managedKey": "org:github:main"})
+		case http.MethodGet:
+			writeData(w, map[string]any{
+				"kind": "connection", "physicalId": "conn-1",
+				"spec": map[string]any{
+					"provider": "github", "name": "main", "scopeTier": "org", "credentialKind": "model_provider",
+					"endpoint": "https://api.example.test", "credentialBindingId": "cb-1",
+				},
+				"status": map[string]any{"endpointRevision": 2, "credentialsSuspended": false},
+			})
+		default:
+			writeAPIError(w, http.StatusNotFound, "NOT_FOUND", "gone")
+		}
+	})
+	r := &connectionResource{client: client.New(srv.URL, "org-1", "tok", srv.Client())}
+	sch := schemaOf(t, r)
+	plan := connectionModelFixture("https://api.example.test")
+	plan.ID = types.StringUnknown()
+	plan.EndpointRevision = types.Int64Unknown()
+	plan.CredentialsSuspended = types.BoolUnknown()
+	obj := sch.Type().TerraformType(ctx).(tftypes.Object)
+	createResp := resource.CreateResponse{State: tfsdk.State{Schema: sch, Raw: tftypes.NewValue(obj, nil)}}
+	r.Create(ctx, resource.CreateRequest{Plan: tfsdk.Plan{Schema: sch, Raw: stateFrom(t, sch, plan).Raw}}, &createResp)
+	if createResp.Diagnostics.HasError() {
+		t.Fatalf("create: %v", createResp.Diagnostics)
+	}
+	var got connectionModel
+	createResp.State.Get(ctx, &got)
+	if got.ID.ValueString() != "conn-1" || got.EndpointRevision.ValueInt64() != 2 || got.CredentialBindingID.ValueString() != "cb-1" {
+		t.Fatalf("state = %+v", got)
+	}
+	if body := srv.called(http.MethodPost)[0].Body; body["spec"].(map[string]any)["credentialBindingId"] != "cb-1" {
+		t.Fatalf("create body = %v", body)
+	}
+	delResp := resource.DeleteResponse{}
+	r.Delete(ctx, resource.DeleteRequest{State: createResp.State}, &delResp)
+	if delResp.Diagnostics.HasError() {
+		t.Fatalf("a 404 delete must succeed: %v", delResp.Diagnostics)
+	}
+}
+
+func TestConnectionReadbackNullBindingReadsAsDrift(t *testing.T) {
+	m := connectionModelFixture("https://api.example.test")
+	m.applyReadback(&client.Resource{
+		PhysicalID: "conn-1",
+		Spec:       map[string]any{"provider": "github", "name": "main", "scopeTier": "org", "credentialKind": "model_provider", "endpoint": "https://api.example.test"},
+		Status:     map[string]any{"endpointRevision": float64(3), "credentialsSuspended": true},
+	})
+	if !m.CredentialBindingID.IsNull() || !m.CredentialsSuspended.ValueBool() || m.EndpointRevision.ValueInt64() != 3 {
+		t.Fatalf("readback = %+v", m)
+	}
+}

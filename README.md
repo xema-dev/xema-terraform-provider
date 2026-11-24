@@ -140,6 +140,7 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_credential_binding`       | `credential-binding`    | credential-broker-api |
 | `xema_credential_default`       | `credential-default`    | space-registry-api    |
 | `xema_egress_destinations`      | `egress-destinations`   | biome-host-api        |
+| `xema_connection`               | `connection`            | connector-gateway-api |
 
 Opaque object/array fields (e.g. `metadata`, `config_json`, `branding`,
 `lockfile`, `integrations`, `resources`, `access_grants`) are typed as
