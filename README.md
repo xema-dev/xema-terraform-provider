@@ -136,6 +136,10 @@ Each resource kind below has a matching data source (`data.xema_<kind>`) that re
 | `xema_biome_install`            | `biome-install`         | biome-host-api        |
 | `xema_portal`                   | `portal`                | app-runtime-api       |
 | `xema_public_exposure`          | `public-exposure`       | biome-host-api        |
+| `xema_org_setting`              | `org-setting`           | space-registry-api    |
+| `xema_credential_binding`       | `credential-binding`    | credential-broker-api |
+| `xema_credential_default`       | `credential-default`    | space-registry-api    |
+| `xema_egress_destinations`      | `egress-destinations`   | biome-host-api        |
 
 Opaque object/array fields (e.g. `metadata`, `config_json`, `branding`,
 `lockfile`, `integrations`, `resources`, `access_grants`) are typed as
@@ -169,6 +173,27 @@ or key-order differences never show as drift.
 > document, an unchanged document writes nothing, and `revision` / `configured`
 > are read-only. Destroying it only stops Terraform managing the setting: the
 > installation's exposure is left as last written, never reset.
+> **`xema_org_setting`** is the organisation's own value of one setting (id and
+> import id: the setting key `<namespace>:<name>@<major>`). `value` is a JSON
+> scalar, written with `jsonencode`. Destroying it clears the value, so the
+> setting reverts to its declaration or default.
+> **`xema_credential_binding`** is a sealed LLM provider key with its allow-lists
+> (id: the broker's binding id; import with it). `secret_value` is sensitive and
+> is sent only on create and when `secret_version` changes, so a re-apply never
+> rotates; change both to rotate. This framework version has no write-only
+> attributes, so Terraform still keeps the configured secret in state, and the
+> state backend holds a secret. `llm_provider` is config-only (never read back).
+> A changed scope, project, auth type or provider replaces the binding; destroying
+> it revokes it, and an already revoked binding destroys cleanly.
+> **`xema_credential_default`** points an org's or project's provider at a
+> binding (id `org:<provider key>` or `project:<project id>:<provider key>`).
+> Destroying it clears the default. **`xema_provider.api_key`** is deprecated:
+> enrol keys through these two resources instead.
+> **`xema_egress_destinations`** is the installation's egress policy (id
+> `installation`; owner-only): `kind` and `grants`, the grants a JSON list passed
+> to biome-host unchanged. The server reads and sends the revision, so it is not
+> configurable; a concurrent write fails with a clear conflict message. Destroying
+> it resets the policy to `public-only`.
 > **`xema_biome_install`** manages **org-scoped** installs (`projectId` null);
 > the pinned biome version is service-managed and is not a declarable field, and
 > changing `biome_id` replaces the install. The control plane plans the install,
