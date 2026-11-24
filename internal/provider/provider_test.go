@@ -56,8 +56,8 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	}
 
 	resources := xp.Resources(context.Background())
-	if got := len(resources); got != 24 {
-		t.Fatalf("expected 24 resources, got %d", got)
+	if got := len(resources); got != 25 {
+		t.Fatalf("expected 25 resources, got %d", got)
 	}
 
 	wantResources := map[string]bool{
@@ -85,6 +85,7 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 		"xema_credential_binding":    false,
 		"xema_credential_default":    false,
 		"xema_egress_destinations":   false,
+		"xema_connection":            false,
 	}
 	for _, factory := range resources {
 		var resp resource.MetadataResponse
@@ -122,8 +123,8 @@ func TestResourceSchemasValid(t *testing.T) {
 		}
 	}
 
-	if got := len(xp.DataSources(context.Background())); got != 24 {
-		t.Fatalf("expected 24 data sources, got %d", got)
+	if got := len(xp.DataSources(context.Background())); got != 25 {
+		t.Fatalf("expected 25 data sources, got %d", got)
 	}
 }
 
