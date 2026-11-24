@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Raises terraform-plugin-framework to 1.19.0 (write-only attributes) and the
+  Go directive to 1.25.0.
+- XEMA-10065: `xema_org_setting`, `xema_credential_binding`,
+  `xema_credential_default` and `xema_egress_destinations`, each with a data
+  source. `xema_credential_binding.secret_value` is a sensitive write-only
+  attribute (never in plan or state; needs Terraform 1.11 or later), sent only on
+  create and when `secret_version` changes. Needs control-plane
+  with these resource kinds (xema-base XEMA-10065).
+- `xema_provider.api_key` is deprecated: it retires once keys are enrolled
+  through `xema_credential_binding` + `xema_credential_default`. It is not
+  removed yet.
 - **Breaking:** `xema_grant` and `data.xema_grant` are removed. Declare a
   `xema_role` with the grants and a `xema_role_assignment` instead. Before you
   upgrade, run `terraform state rm` on every `xema_grant` and

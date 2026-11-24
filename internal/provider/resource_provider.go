@@ -89,9 +89,12 @@ func (r *providerResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				Description: "Provider authentication type.",
 			},
 			"api_key": schema.StringAttribute{
-				Optional:    true,
-				Sensitive:   true,
-				Description: "Enrols this key as the organisation's default credential for the provider's endpoint; it is sealed by the platform and never stored on the provider.",
+				Optional:  true,
+				Sensitive: true,
+				DeprecationMessage: "`api_key` retires once keys are enrolled through `xema_credential_binding` " +
+					"(the sealed key) and `xema_credential_default` (the default pointer). Move the key to those " +
+					"resources; it is not removed yet.",
+				Description: "Deprecated: use `xema_credential_binding` + `xema_credential_default`. Enrols this key as the organisation's default credential for the provider's endpoint; it is sealed by the platform and never stored on the provider.",
 			},
 			"max_concurrent_requests": schema.Int64Attribute{
 				Optional:    true,

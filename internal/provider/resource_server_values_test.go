@@ -25,6 +25,11 @@ var notServerFilled = map[string]string{
 	"xema_role.grants":                                   "the declaration is the whole grant set: unset sends the empty set, and the read-back keeps the declared value wherever the server's means the same",
 	"xema_service_principal.description":                 "the author's text: the server stores what it is given, else nothing",
 	"xema_service_principal.rotation_trigger":            "a provider-side trigger the server never sees",
+	"xema_credential_binding.secret_version":             "a provider-side rotation label the server never sees",
+	"xema_credential_binding.project_id":                 "the author's project: the server stores what it is given, else nothing",
+	"xema_credential_binding.header_name":                "the author's header: the server stores what it is given, else nothing",
+	"xema_credential_default.project_id":                 "the author's project: the server stores what it is given, else nothing",
+	"xema_egress_destinations.grants":                    "the author's grants: the server stores what it is given, else nothing",
 	"xema_portal.subdomain":                              "retired: the control plane refuses a declaration carrying it",
 	"xema_model_resolution_rule.target_temperature":      "the rule's author sets it: the server stores what it is given, else null, and fills no default",
 	"xema_model_resolution_rule.target_reasoning_effort": "the rule's author sets it: the server stores what it is given, else null, and fills no default",
@@ -60,15 +65,18 @@ func TestOptionalAttributesAcceptTheServersValue(t *testing.T) {
 
 func TestIdentityAttributesPlanAReplacement(t *testing.T) {
 	identity := map[string][]string{
-		"xema_biome_install":     {"biome_id"},
-		"xema_team":              {"slug"},
-		"xema_environment":       {"slug", "kind"},
-		"xema_role":              {"slug"},
-		"xema_role_assignment":   {"role_id", "subject_kind", "subject_ref"},
-		"xema_skill":             {"slug", "scope", "kind", "parent_slug"},
-		"xema_portal":            {"slug"},
-		"xema_service_principal": {"name", "display_name"},
-		"xema_model":             {"provider_id", "model_id"},
+		"xema_biome_install":      {"biome_id"},
+		"xema_team":               {"slug"},
+		"xema_environment":        {"slug", "kind"},
+		"xema_role":               {"slug"},
+		"xema_role_assignment":    {"role_id", "subject_kind", "subject_ref"},
+		"xema_skill":              {"slug", "scope", "kind", "parent_slug"},
+		"xema_portal":             {"slug"},
+		"xema_service_principal":  {"name", "display_name"},
+		"xema_model":              {"provider_id", "model_id"},
+		"xema_org_setting":        {"key"},
+		"xema_credential_binding": {"scope_tier", "project_id", "auth_type"},
+		"xema_credential_default": {"scope_tier", "project_id"},
 	}
 	schemas := resourceSchemas(t)
 	for typeName, names := range identity {

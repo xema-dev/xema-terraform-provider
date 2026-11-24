@@ -223,3 +223,45 @@ data "xema_project" "by_key" {
 output "demo_project_name" {
   value = data.xema_project.lookup.name
 }
+
+# An org setting: the value is a JSON scalar (here an ISO-8601 duration string).
+resource "xema_org_setting" "example" {
+  key   = "example:session-timeout@1"
+  value = jsonencode("PT30M")
+}
+
+# A credential binding: the sealed key for one LLM provider endpoint. The secret
+# is sent on create and when secret_version changes; bump both to rotate it.
+resource "xema_credential_binding" "openai" {
+  scope_tier = "org"
+  auth_type  = "bearer"
+  llm_provider = {
+    slug     = "openai"
+    base_url = "https://api.openai.com/v1"
+  }
+  allowed_capabilities = ["llm.invoke"]
+  allowed_actions      = ["invoke"]
+  allowed_resources    = ["*"]
+  secret_value         = var.openai_api_key
+  secret_version       = "2026-01"
+}
+
+variable "openai_api_key" {
+  type      = string
+  sensitive = true
+}
+
+# Make the binding the organisation's default credential for the provider.
+resource "xema_credential_default" "openai" {
+  scope_tier = "org"
+  llm_provider = {
+    slug     = "openai"
+    base_url = "https://api.openai.com/v1"
+  }
+  credential_binding_id = xema_credential_binding.openai.id
+}
+
+# The installation's egress destination policy (installation owner only).
+resource "xema_egress_destinations" "installation" {
+  kind = "public-only"
+}
