@@ -6,6 +6,11 @@ provider endpoint, with the allow-lists that bound its use. The configuration an
 ## Example
 
 ```terraform
+variable "openai_key" {
+  type      = string
+  sensitive = true
+}
+
 resource "xema_credential_binding" "openai" {
   scope_tier = "org"
   llm_provider = {
