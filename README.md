@@ -246,6 +246,20 @@ or key-order differences never show as drift.
 > roles needs a person's token (see `xema_role_assignment`). Import by principal
 > id; an imported principal has a null `client_secret`, so rotate to obtain one.
 > A create or rotation that returns no secret is an error, never an empty secret.
+> The computed `audience` is the one audience the credential is bound to, as the
+> service reports it. Request a token with `scope=audience:<audience>`: without
+> that scope the token has no audience and the exchange answers 401
+> `TOKEN_AUDIENCE_MISSING`. `audience` is null when the service reports none (no
+> single audience, or an older service); then do not build the scope from it.
+> It is also exposed by `data.xema_service_principal`.
+>
+> ```sh
+> curl -s -X POST "$TOKEN_ENDPOINT" \
+>   -d grant_type=client_credentials \
+>   -d client_id="$CLIENT_ID" \
+>   -d client_secret="$CLIENT_SECRET" \
+>   -d scope="audience:$AUDIENCE"   # AUDIENCE = xema_service_principal.<name>.audience
+> ```
 > **`xema_space`** updates `classification` in place; changing `ref`,
 > `display_name`, or `labels` forces replacement (the owning service's update is
 > classification-only).

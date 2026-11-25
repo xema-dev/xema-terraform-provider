@@ -159,6 +159,12 @@ resource "xema_role_assignment" "pipeline_consent_decider" {
 # encrypted and access-restricted, and write the secret straight into the CI
 # secret store (a github_actions_secret or Key Vault secret resource), never
 # into an output. Bump rotation_trigger to rotate the secret in place.
+#
+# To get a token, POST to token_endpoint with grant_type=client_credentials,
+# client_id, client_secret and scope="audience:<audience>", where <audience> is
+# xema_service_principal.pipeline.audience. Without that scope the token has no
+# audience and the exchange answers 401 TOKEN_AUDIENCE_MISSING. audience can be
+# null (the service reports none): then do not build the scope from it.
 resource "xema_service_principal" "pipeline" {
   name             = "ci-pipeline"
   display_name     = "CI pipeline"
