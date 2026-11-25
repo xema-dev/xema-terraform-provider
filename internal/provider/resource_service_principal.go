@@ -63,6 +63,7 @@ type servicePrincipalModel struct {
 	RotationTrigger        types.String `tfsdk:"rotation_trigger"`
 	RotationOverlapSeconds types.Int64  `tfsdk:"rotation_overlap_seconds"`
 	ClientID               types.String `tfsdk:"client_id"`
+	Audience               types.String `tfsdk:"audience"`
 	TokenEndpoint          types.String `tfsdk:"token_endpoint"`
 	CredentialRevision     types.String `tfsdk:"credential_revision"`
 	State                  types.String `tfsdk:"state"`
@@ -195,6 +196,13 @@ func (r *servicePrincipalResource) Schema(_ context.Context, _ resource.SchemaRe
 				Computed:    true,
 				Description: "The OAuth client id.",
 			},
+			"audience": schema.StringAttribute{
+				Computed: true,
+				Description: "The one audience the client credential is bound to, as the service reports it. Request " +
+					"a token with `scope=audience:<audience>`: without that scope the token carries no audience and " +
+					"the exchange is refused (TOKEN_AUDIENCE_MISSING). Null when the service reports none (the " +
+					"principal holds no single audience, or the service is older): then do not build the scope from it.",
+			},
 			"token_endpoint": schema.StringAttribute{
 				Computed:    true,
 				Description: "The OAuth token endpoint the client id and secret authenticate against. Null after import until the first rotation.",
@@ -247,6 +255,7 @@ func (r *servicePrincipalResource) ModifyPlan(ctx context.Context, req resource.
 	}
 	set("client_secret", state.ClientSecret)
 	set("client_id", state.ClientID)
+	set("audience", state.Audience)
 	// The read reports no token endpoint, so an imported principal holds none:
 	// keep that null, but let a rotation (which answers one) fill it.
 	if rotating && state.TokenEndpoint.IsNull() {
@@ -290,6 +299,8 @@ func (m *servicePrincipalModel) applyReadback(res *client.Resource) {
 	if v := statusString(res.Status, "clientId"); v != "" {
 		m.ClientID = types.StringValue(v)
 	}
+	// The service is authoritative: an absent audience clears a stale one.
+	m.Audience = strOrNull(statusString(res.Status, "audience"))
 	if v := statusString(res.Status, "tokenEndpoint"); v != "" {
 		m.TokenEndpoint = types.StringValue(v)
 	}
@@ -356,6 +367,7 @@ func (r *servicePrincipalResource) Create(ctx context.Context, req resource.Crea
 	plan.ClientID = types.StringValue(handle.OneTimeOutputs["clientId"])
 	plan.TokenEndpoint = types.StringValue(handle.OneTimeOutputs["tokenEndpoint"])
 	plan.CredentialRevision = types.StringValue(handle.OneTimeOutputs["credentialRevision"])
+	plan.Audience = strOrNull(handle.OneTimeOutputs["audience"])
 	plan.State = types.StringNull()
 
 	res, err := r.client.Read(ctx, servicePrincipalKind, handle.PhysicalID)
@@ -365,7 +377,11 @@ func (r *servicePrincipalResource) Create(ctx context.Context, req resource.Crea
 		resp.Diagnostics.AddError("Failed to read service principal after create", err.Error())
 		return
 	}
+	created := plan.Audience
 	plan.applyReadback(res)
+	if plan.Audience.IsNull() {
+		plan.Audience = created
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -411,6 +427,7 @@ func (r *servicePrincipalResource) Update(ctx context.Context, req resource.Upda
 	if plan.RotationTrigger.Equal(state.RotationTrigger) {
 		plan.ClientSecret = state.ClientSecret
 		plan.ClientID = state.ClientID
+		plan.Audience = state.Audience
 		plan.CredentialRevision = state.CredentialRevision
 		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		return
@@ -439,6 +456,8 @@ func (r *servicePrincipalResource) Update(ctx context.Context, req resource.Upda
 	if rotated.ClientID == "" {
 		plan.ClientID = state.ClientID
 	}
+	// The service states the audience of the rotated credential; none means null.
+	plan.Audience = strOrNull(rotated.Audience)
 	plan.CredentialRevision = types.StringValue(strconv.FormatInt(rotated.CredentialRevision, 10))
 	if plan.TokenEndpoint.IsUnknown() {
 		plan.TokenEndpoint = strOrNull(rotated.TokenEndpoint)

@@ -295,9 +295,12 @@ func (c *Client) Delete(ctx context.Context, kind, id string) error {
 type RotatedCredential struct {
 	CredentialRevision int64  `json:"credentialRevision"`
 	ClientID           string `json:"clientId"`
-	TokenEndpoint      string `json:"tokenEndpoint"`
-	ClientSecret       string `json:"clientSecret"`
-	Replayed           bool   `json:"replayed"`
+	// Audience is the one audience the credential is bound to; absent when the
+	// service reports none (several audiences, or an older service).
+	Audience      string `json:"audience,omitempty"`
+	TokenEndpoint string `json:"tokenEndpoint"`
+	ClientSecret  string `json:"clientSecret"`
+	Replayed      bool   `json:"replayed"`
 }
 
 type credentialRotationBody struct {

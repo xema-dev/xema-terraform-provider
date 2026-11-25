@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- XEMA-10608: `xema_service_principal` (resource and data source) exports the
+  computed `audience`, the one audience the client credential is bound to, as
+  the service reports it (create, read, rotation). Request tokens with
+  `scope=audience:<audience>`. It is null when the service reports none (or is
+  older). Needs no new server version; an older service leaves it null.
 - Raises terraform-plugin-framework to 1.19.0 (write-only attributes) and the
   Go directive to 1.25.0.
 - XEMA-10065: `xema_org_setting`, `xema_credential_binding`,

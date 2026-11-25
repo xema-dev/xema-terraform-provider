@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -34,6 +35,9 @@ type servicePrincipalServer struct {
 	creates        int
 	deletes        int
 	secretOnRead   bool
+	// audience is what create and read report; rotatedAudience is what a rotation
+	// answers and then reports. Empty means the key is absent (older server).
+	audience, rotatedAudience string
 	// deleteStatus, when set, answers every DELETE with that status.
 	deleteStatus int
 }
@@ -44,7 +48,7 @@ type servicePrincipalServer struct {
 func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 	t.Helper()
 	const base = "/control-plane/resources/service-principal"
-	fake := &servicePrincipalServer{held: map[string]map[string]any{}}
+	fake := &servicePrincipalServer{held: map[string]map[string]any{}, audience: "aud-1", rotatedAudience: "aud-2"}
 	revision := 1
 	fake.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.TrimPrefix(r.URL.Path, base)
@@ -62,9 +66,13 @@ func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 			fake.held["sp-1"] = map[string]any{"spec": body.Spec, "state": "ACTIVE"}
 			out := map[string]any{"kind": "service-principal", "physicalId": "sp-1", "managedKey": body.Spec["name"]}
 			if !fake.omitSecret {
-				out["oneTimeOutputs"] = map[string]string{
+				outputs := map[string]string{
 					"clientId": "cid-1", "clientSecret": "secret-1", "tokenEndpoint": "https://t/token", "credentialRevision": "1",
 				}
+				if fake.audience != "" {
+					outputs["audience"] = fake.audience
+				}
+				out["oneTimeOutputs"] = outputs
 			}
 			w.WriteHeader(http.StatusCreated)
 			writeData(w, out)
@@ -76,6 +84,10 @@ func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 			revision++
 			out := map[string]any{
 				"credentialRevision": revision, "clientId": "cid-1", "tokenEndpoint": "https://t/token", "replayed": false,
+			}
+			fake.audience = fake.rotatedAudience
+			if fake.audience != "" {
+				out["audience"] = fake.audience
 			}
 			if !fake.omitSecret {
 				out["clientSecret"] = "secret-" + string(rune('0'+revision))
@@ -104,6 +116,9 @@ func fakeServicePrincipalControlPlane(t *testing.T) *servicePrincipalServer {
 			status := map[string]any{
 				"state": p["state"], "credentialRevision": revision, "clientId": "cid-1",
 			}
+			if fake.audience != "" {
+				status["audience"] = fake.audience
+			}
 			if fake.secretOnRead {
 				status["clientSecret"] = "must-never-be-used"
 			}
@@ -126,7 +141,7 @@ func servicePrincipalSchema(t *testing.T, r *servicePrincipalResource) (schema.S
 
 var spAttrs = []string{
 	"id", "name", "display_name", "description", "rotation_trigger", "rotation_overlap_seconds",
-	"client_id", "token_endpoint", "credential_revision", "state", "client_secret",
+	"client_id", "audience", "token_endpoint", "credential_revision", "state", "client_secret",
 }
 
 // spValue builds an object value with every attribute null unless overridden.
@@ -500,5 +515,136 @@ func TestServicePrincipalSchema(t *testing.T) {
 	}
 	if !overlap(30) || !overlap(86400) || overlap(29) || overlap(86401) {
 		t.Error("rotation_overlap_seconds must be 30..86400")
+	}
+}
+
+func TestServicePrincipalCreateSetsTheAudience(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	_, resp := createServicePrincipal(t, fake, "")
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("create: %v", resp.Diagnostics)
+	}
+	if got := readSP(t, resp.State); got.Audience.ValueString() != "aud-1" {
+		t.Errorf("audience = %s, want aud-1", got.Audience)
+	}
+}
+
+func TestServicePrincipalAudienceAbsentFromServerIsNullWithoutDiagnostics(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	fake.audience, fake.rotatedAudience = "", ""
+	r, resp := createServicePrincipal(t, fake, "v1")
+	if len(resp.Diagnostics) != 0 {
+		t.Fatalf("create diagnostics: %v", resp.Diagnostics)
+	}
+	got := readSP(t, resp.State)
+	if !got.Audience.IsNull() {
+		t.Errorf("audience = %s, want null and known", got.Audience)
+	}
+	readResp := resource.ReadResponse{State: resp.State}
+	r.Read(context.Background(), resource.ReadRequest{State: resp.State}, &readResp)
+	if len(readResp.Diagnostics) != 0 || !readSP(t, readResp.State).Audience.IsNull() {
+		t.Errorf("read must give null with no diagnostics: %v", readResp.Diagnostics)
+	}
+}
+
+func TestServicePrincipalReadSetsAndClearsTheAudience(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	r, createResp := createServicePrincipal(t, fake, "")
+
+	fake.audience = "aud-changed"
+	readResp := resource.ReadResponse{State: createResp.State}
+	r.Read(context.Background(), resource.ReadRequest{State: createResp.State}, &readResp)
+	if got := readSP(t, readResp.State); got.Audience.ValueString() != "aud-changed" {
+		t.Errorf("audience = %s, want aud-changed", got.Audience)
+	}
+
+	fake.audience = ""
+	readResp2 := resource.ReadResponse{State: readResp.State}
+	r.Read(context.Background(), resource.ReadRequest{State: readResp.State}, &readResp2)
+	if got := readSP(t, readResp2.State); !got.Audience.IsNull() {
+		t.Errorf("a stale audience must not survive a read without one: %s", got.Audience)
+	}
+}
+
+func TestServicePrincipalImportFillsTheAudience(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	fake.held["sp-1"] = map[string]any{"spec": map[string]any{"name": "ci", "displayName": "CI"}, "state": "ACTIVE"}
+	r := newServicePrincipalResource(fake)
+	sch, obj := servicePrincipalSchema(t, r)
+	importResp := resource.ImportStateResponse{State: tfsdk.State{Schema: sch, Raw: tftypes.NewValue(obj, nil)}}
+	r.ImportState(context.Background(), resource.ImportStateRequest{ID: "sp-1"}, &importResp)
+	readResp := resource.ReadResponse{State: importResp.State}
+	r.Read(context.Background(), resource.ReadRequest{State: importResp.State}, &readResp)
+	if got := readSP(t, readResp.State); got.Audience.ValueString() != "aud-1" {
+		t.Errorf("audience = %s, want aud-1", got.Audience)
+	}
+}
+
+func TestServicePrincipalAudienceReplanAndRotation(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	r, createResp := createServicePrincipal(t, fake, "v1")
+	sch, obj := servicePrincipalSchema(t, r)
+
+	if got := planModify(t, r, createResp.State, "v1"); got.Audience.ValueString() != "aud-1" {
+		t.Errorf("an unchanged trigger must keep the audience: %s", got.Audience)
+	}
+	if got := planModify(t, r, createResp.State, "v2"); !got.Audience.IsUnknown() {
+		t.Errorf("a changed trigger must plan the audience unknown: %s", got.Audience)
+	}
+
+	rotate := func(state tfsdk.State, trigger string) servicePrincipalModel {
+		plan := tfsdk.Plan{Schema: sch, Raw: spValue(obj, map[string]tftypes.Value{
+			"id": tfStr("sp-1"), "name": tfStr("ci"), "display_name": tfStr("CI"), "rotation_trigger": tfStr(trigger),
+			"rotation_overlap_seconds": tftypes.NewValue(tftypes.Number, 300),
+			"client_id":                tfUnknown(), "audience": tfUnknown(), "token_endpoint": tfStr("https://t/token"),
+			"credential_revision": tfUnknown(), "state": tfStr("ACTIVE"), "client_secret": tfUnknown(),
+		})}
+		resp := resource.UpdateResponse{State: state}
+		r.Update(context.Background(), resource.UpdateRequest{Plan: plan, State: state}, &resp)
+		if len(resp.Diagnostics) != 0 {
+			t.Fatalf("update: %v", resp.Diagnostics)
+		}
+		return readSP(t, resp.State)
+	}
+	if got := rotate(createResp.State, "v2"); got.Audience.ValueString() != "aud-2" {
+		t.Errorf("rotation must take the audience it answers: %s", got.Audience)
+	}
+	fake.rotatedAudience = ""
+	if got := rotate(createResp.State, "v3"); !got.Audience.IsNull() {
+		t.Errorf("a rotation stating no audience must give null, not the prior value: %s", got.Audience)
+	}
+}
+
+func TestServicePrincipalDataSourceReportsTheAudience(t *testing.T) {
+	fake := fakeServicePrincipalControlPlane(t)
+	_, createResp := createServicePrincipal(t, fake, "")
+	_ = createResp
+	d := &servicePrincipalDataSource{client: client.New(fake.URL, "org-1", "tok", fake.Client())}
+	var sr datasource.SchemaResponse
+	d.Schema(context.Background(), datasource.SchemaRequest{}, &sr)
+	obj := sr.Schema.Type().TerraformType(context.Background()).(tftypes.Object)
+	run := func() servicePrincipalDataModel {
+		vals := map[string]tftypes.Value{}
+		for name, typ := range obj.AttributeTypes {
+			vals[name] = tftypes.NewValue(typ, nil)
+		}
+		vals["id"] = tfStr("sp-1")
+		resp := datasource.ReadResponse{State: tfsdk.State{Schema: sr.Schema, Raw: tftypes.NewValue(obj, nil)}}
+		d.Read(context.Background(), datasource.ReadRequest{Config: tfsdk.Config{Schema: sr.Schema, Raw: tftypes.NewValue(obj, vals)}}, &resp)
+		if len(resp.Diagnostics) != 0 {
+			t.Fatalf("read: %v", resp.Diagnostics)
+		}
+		var got servicePrincipalDataModel
+		if diags := resp.State.Get(context.Background(), &got); diags.HasError() {
+			t.Fatalf("state: %v", diags)
+		}
+		return got
+	}
+	if got := run(); got.Audience.ValueString() != "aud-1" {
+		t.Errorf("audience = %s, want aud-1", got.Audience)
+	}
+	fake.audience = ""
+	if got := run(); !got.Audience.IsNull() {
+		t.Errorf("audience = %s, want null", got.Audience)
 	}
 }
