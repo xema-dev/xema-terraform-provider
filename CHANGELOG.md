@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- XEMA-11420: `xema_role_assignment.subject_kind` accepts `team` and no longer
+  accepts `group`, following authorization-api's SubjectKind (XEMA-10246 renamed
+  Group to Team; the server refuses `group` with 422 RESOURCE_SPEC_INVALID, so a
+  `group` assignment never worked). Breaking for a configuration that names
+  `group`: write `team`.
 - XEMA-10608: `xema_service_principal` (resource and data source) exports the
   computed `audience`, the one audience the client credential is bound to, as
   the service reports it (create, read, rotation). Request tokens with
