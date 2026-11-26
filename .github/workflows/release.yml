@@ -13,9 +13,7 @@ permissions:
 jobs:
   goreleaser:
     name: goreleaser
-    # GitHub-hosted, same as ci.yml: the org's self-hosted [self-hosted, linux]
-    # pool cannot serve this public repo (runner group disallows public repos).
-    runs-on: ubuntu-latest
+    runs-on: [general, x64]
     timeout-minutes: 20
     steps:
       - name: Checkout
