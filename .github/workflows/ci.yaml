@@ -17,8 +17,7 @@ permissions:
 jobs:
   ci:
     name: fmt / vet / test / build
-    # GitHub-hosted: the org's self-hosted pool cannot serve this public repo.
-    runs-on: ubuntu-latest
+    runs-on: [general, x64]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +47,7 @@ jobs:
     name: ci/required
     needs: [ci]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [general, x64]
     timeout-minutes: 2
     steps:
       - run: test "${{ needs.ci.result }}" = success
