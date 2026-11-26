@@ -21,9 +21,12 @@ import (
 const roleAssignmentKind = "role-assignment"
 
 // roleAssignmentSubjectKinds is authorization-api's SubjectKind, the closed set
-// the role-assignment kind accepts in `subjectKind`.
+// the role-assignment kind accepts in `subjectKind`: @xemahq/contracts
+// src/subject/lib/subject.ts, in its order. A team is `team` (XEMA-10246 renamed
+// Group to Team; the server refuses `group`). The provider has no generated Go
+// client to take it from, so this list follows that enum by hand.
 var roleAssignmentSubjectKinds = []string{
-	"user", "agent", "app", "app-client", "service", "group", "role", "runner",
+	"user", "agent", "app", "app-client", "service", "team", "role", "runner",
 	"external-subject", "anon", "organization", "org-administrators",
 }
 

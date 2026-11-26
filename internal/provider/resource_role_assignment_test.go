@@ -223,4 +223,8 @@ func TestRoleAssignmentSchema(t *testing.T) {
 	if !check("service") || !check("user") || check("svc") || check("Service") {
 		t.Error("subject_kind must accept the SubjectKind values only")
 	}
+	// XEMA-10246: the server's SubjectKind names a team `team`; it refuses `group` (422 RESOURCE_SPEC_INVALID).
+	if !check("team") || check("group") {
+		t.Error("subject_kind must accept team and refuse group")
+	}
 }
