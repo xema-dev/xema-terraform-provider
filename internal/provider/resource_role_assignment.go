@@ -47,12 +47,12 @@ type roleAssignmentPrincipalModel struct {
 // one principal. The id is the binding id the server mints. The server has no
 // update, so every attribute replaces the resource.
 type roleAssignmentModel struct {
-	ID             types.String                 `tfsdk:"id"`
-	DefinitionID   types.String                 `tfsdk:"definition_id"`
-	Principal      roleAssignmentPrincipalModel `tfsdk:"principal"`
-	ScopeRef       types.String                 `tfsdk:"scope_ref"`
-	EnvironmentRef types.String                 `tfsdk:"environment_ref"`
-	Until          types.String                 `tfsdk:"until"`
+	ID             types.String                  `tfsdk:"id"`
+	DefinitionID   types.String                  `tfsdk:"definition_id"`
+	Principal      *roleAssignmentPrincipalModel `tfsdk:"principal"`
+	ScopeRef       types.String                  `tfsdk:"scope_ref"`
+	EnvironmentRef types.String                  `tfsdk:"environment_ref"`
+	Until          types.String                  `tfsdk:"until"`
 }
 
 func (r *roleAssignmentResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -123,12 +123,12 @@ func (r *roleAssignmentResource) Configure(_ context.Context, req resource.Confi
 }
 
 func (m roleAssignmentModel) toSpec() map[string]any {
-	spec := map[string]any{
-		"definitionId": m.DefinitionID.ValueString(),
-		"principal": map[string]any{
+	spec := map[string]any{"definitionId": m.DefinitionID.ValueString()}
+	if m.Principal != nil {
+		spec["principal"] = map[string]any{
 			"kind": m.Principal.Kind.ValueString(),
 			"ref":  m.Principal.Ref.ValueString(),
-		},
+		}
 	}
 	if v := optString(m.ScopeRef); v != "" {
 		spec["scopeRef"] = v
@@ -155,7 +155,7 @@ func sameInstant(a, b string) bool {
 func (m *roleAssignmentModel) applyReadback(spec map[string]any) {
 	m.DefinitionID = types.StringValue(specString(spec, "definitionId"))
 	principal, _ := spec["principal"].(map[string]any)
-	m.Principal = roleAssignmentPrincipalModel{
+	m.Principal = &roleAssignmentPrincipalModel{
 		Kind: types.StringValue(specString(principal, "kind")),
 		Ref:  types.StringValue(specString(principal, "ref")),
 	}
