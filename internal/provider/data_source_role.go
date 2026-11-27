@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -51,10 +52,10 @@ func (d *roleDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 				Computed:    true,
 				Description: "Free-form role description.",
 			},
-			"grants": schema.SetNestedAttribute{
-				Computed:     true,
-				Description:  "The grants the role holds; empty reads as null.",
-				NestedObject: schema.NestedAttributeObject{Attributes: roleGrantDataSourceAttributes()},
+			"pattern": schema.StringAttribute{
+				Computed:    true,
+				CustomType:  jsontypes.NormalizedType{},
+				Description: "The role's pattern as a JSON object.",
 			},
 		},
 	}
@@ -76,13 +77,6 @@ func (d *roleDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}
-	data.applyReadback(res.Spec, nil)
-	// A lookup has no declaration to match, so the approval gate reads as the
-	// value it has.
-	for i := range data.Grants {
-		if data.Grants[i].RequiresApproval.IsNull() {
-			data.Grants[i].RequiresApproval = types.BoolValue(false)
-		}
-	}
+	data.applyReadback(res.Spec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

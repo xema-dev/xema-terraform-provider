@@ -13,9 +13,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	"github.com/xema-dev/xema-terraform-provider/internal/client"
@@ -32,7 +30,7 @@ type roleAssignmentServer struct {
 }
 
 // fakeRoleAssignmentControlPlane answers as the role-assignment kind does: the
-// physical id is `<roleId>:<subjectKind>:<subjectRef>`, an absent assignment
+// physical id is the binding id, an absent assignment
 // reads 404, and so does deleting one that is gone.
 func fakeRoleAssignmentControlPlane(t *testing.T) *roleAssignmentServer {
 	t.Helper()
@@ -51,10 +49,16 @@ func fakeRoleAssignmentControlPlane(t *testing.T) *roleAssignmentServer {
 				return
 			}
 			fake.sent = body.Spec
-			physicalID := strings.Join([]string{
-				body.Spec["roleId"].(string), body.Spec["subjectKind"].(string), body.Spec["subjectRef"].(string),
-			}, ":")
-			fake.held[physicalID] = body.Spec
+			physicalID := "binding-" + body.Spec["principal"].(map[string]any)["ref"].(string)
+			held := map[string]any{}
+			for k, v := range body.Spec {
+				held[k] = v
+			}
+			held["scopeRef"] = "org-root"
+			if until, ok := held["until"].(string); ok {
+				held["until"] = strings.Replace(until, "Z", ".000Z", 1)
+			}
+			fake.held[physicalID] = held
 			w.WriteHeader(http.StatusCreated)
 			writeData(w, map[string]any{"kind": "role-assignment", "physicalId": physicalID, "managedKey": physicalID})
 		case r.Method == http.MethodDelete:
@@ -83,17 +87,23 @@ func roleAssignmentSchema(t *testing.T, r *roleAssignmentResource) (schema.Schem
 	return sr.Schema, sr.Schema.Type().TerraformType(ctx).(tftypes.Object)
 }
 
-func createRoleAssignment(t *testing.T, fake *roleAssignmentServer, subjectRef string) (*roleAssignmentResource, resource.CreateResponse) {
+func createRoleAssignment(t *testing.T, fake *roleAssignmentServer, principalRef string, until tftypes.Value) (*roleAssignmentResource, resource.CreateResponse) {
 	t.Helper()
 	ctx := context.Background()
 	r := &roleAssignmentResource{client: client.New(fake.URL, "org-1", "tok", fake.Client())}
 	sch, obj := roleAssignmentSchema(t, r)
 	str := func(v string) tftypes.Value { return tftypes.NewValue(tftypes.String, v) }
+	principalType := obj.AttributeTypes["principal"]
 	plan := tftypes.NewValue(obj, map[string]tftypes.Value{
-		"id":           tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
-		"role_id":      str("ckrole1"),
-		"subject_kind": str("service"),
-		"subject_ref":  str(subjectRef),
+		"id":            tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"definition_id": str("ckrole1"),
+		"principal": tftypes.NewValue(principalType, map[string]tftypes.Value{
+			"kind": str("service"),
+			"ref":  str(principalRef),
+		}),
+		"scope_ref":       tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+		"environment_ref": tftypes.NewValue(tftypes.String, nil),
+		"until":           until,
 	})
 	resp := resource.CreateResponse{State: tfsdk.State{Schema: sch, Raw: tftypes.NewValue(obj, nil)}}
 	r.Create(ctx, resource.CreateRequest{Plan: tfsdk.Plan{Schema: sch, Raw: plan}}, &resp)
@@ -103,49 +113,61 @@ func createRoleAssignment(t *testing.T, fake *roleAssignmentServer, subjectRef s
 	return r, resp
 }
 
-func TestRoleAssignmentCreateSendsTheKey(t *testing.T) {
-	fake := fakeRoleAssignmentControlPlane(t)
-	_, resp := createRoleAssignment(t, fake, "principal-1")
+func noUntil() tftypes.Value { return tftypes.NewValue(tftypes.String, nil) }
 
-	want := map[string]any{"roleId": "ckrole1", "subjectKind": "service", "subjectRef": "principal-1"}
-	for k, v := range want {
-		if fake.sent[k] != v {
-			t.Errorf("spec[%s] = %v, want %v", k, fake.sent[k], v)
+func TestRoleAssignmentCreateSendsTheBindingSpec(t *testing.T) {
+	fake := fakeRoleAssignmentControlPlane(t)
+	_, resp := createRoleAssignment(t, fake, "principal-1", noUntil())
+
+	for _, retired := range []string{"roleId", "subjectKind", "subjectRef", "scopeRef", "environmentRef", "until"} {
+		if _, ok := fake.sent[retired]; ok {
+			t.Errorf("%s must not be sent: %#v", retired, fake.sent)
 		}
 	}
-	if len(fake.sent) != len(want) {
-		t.Errorf("the spec carries only the key: %#v", fake.sent)
+	if fake.sent["definitionId"] != "ckrole1" {
+		t.Errorf("definitionId = %v", fake.sent["definitionId"])
+	}
+	principal, _ := fake.sent["principal"].(map[string]any)
+	if principal["kind"] != "service" || principal["ref"] != "principal-1" {
+		t.Errorf("principal = %#v", fake.sent["principal"])
 	}
 	var got roleAssignmentModel
 	if diags := resp.State.Get(context.Background(), &got); diags.HasError() {
 		t.Fatalf("state: %v", diags)
 	}
-	if got.ID.ValueString() != "ckrole1:service:principal-1" || got.SubjectRef.ValueString() != "principal-1" {
+	if got.ID.ValueString() != "binding-principal-1" || got.Principal.Ref.ValueString() != "principal-1" ||
+		got.ScopeRef.ValueString() != "org-root" {
 		t.Errorf("unexpected state: %#v", got)
 	}
 }
 
-func TestRoleAssignmentIdIsEscapedInThePath(t *testing.T) {
+func TestRoleAssignmentUntilKeepsTheDeclaredForm(t *testing.T) {
 	fake := fakeRoleAssignmentControlPlane(t)
-	createRoleAssignment(t, fake, "pipe/line 1")
+	_, resp := createRoleAssignment(t, fake, "principal-1", tftypes.NewValue(tftypes.String, "2030-01-01T00:00:00Z"))
 
-	read := fake.paths[len(fake.paths)-1]
-	if want := "/control-plane/resources/role-assignment/ckrole1:service:pipe%2Fline%201"; read != want {
-		t.Errorf("read path = %q, want %q", read, want)
+	var got roleAssignmentModel
+	if diags := resp.State.Get(context.Background(), &got); diags.HasError() {
+		t.Fatalf("state: %v", diags)
+	}
+	if got.Until.ValueString() != "2030-01-01T00:00:00Z" {
+		t.Errorf("until = %q, want the declared form", got.Until.ValueString())
 	}
 }
 
 func TestRoleAssignmentImportReadsTheServer(t *testing.T) {
 	fake := fakeRoleAssignmentControlPlane(t)
-	fake.held["ckrole1:service:principal-1"] = map[string]any{
-		"roleId": "ckrole1", "subjectKind": "service", "subjectRef": "principal-1",
+	fake.held["binding-1"] = map[string]any{
+		"definitionId": "ckrole1",
+		"principal":    map[string]any{"kind": "service", "ref": "principal-1"},
+		"scopeRef":     "org-root",
+		"until":        "2030-01-01T00:00:00.000Z",
 	}
 	ctx := context.Background()
 	r := &roleAssignmentResource{client: client.New(fake.URL, "org-1", "tok", fake.Client())}
 	sch, obj := roleAssignmentSchema(t, r)
 
 	importResp := resource.ImportStateResponse{State: tfsdk.State{Schema: sch, Raw: tftypes.NewValue(obj, nil)}}
-	r.ImportState(ctx, resource.ImportStateRequest{ID: "ckrole1:service:principal-1"}, &importResp)
+	r.ImportState(ctx, resource.ImportStateRequest{ID: "binding-1"}, &importResp)
 	if importResp.Diagnostics.HasError() {
 		t.Fatalf("import: %v", importResp.Diagnostics)
 	}
@@ -158,14 +180,15 @@ func TestRoleAssignmentImportReadsTheServer(t *testing.T) {
 	if diags := readResp.State.Get(ctx, &got); diags.HasError() {
 		t.Fatalf("state: %v", diags)
 	}
-	if got.RoleID.ValueString() != "ckrole1" || got.SubjectKind.ValueString() != "service" || got.SubjectRef.ValueString() != "principal-1" {
+	if got.DefinitionID.ValueString() != "ckrole1" || got.Principal.Kind.ValueString() != "service" ||
+		got.Principal.Ref.ValueString() != "principal-1" || got.Until.ValueString() != "2030-01-01T00:00:00.000Z" {
 		t.Errorf("unexpected state: %#v", got)
 	}
 }
 
 func TestRoleAssignmentGoneReadsAsRemoved(t *testing.T) {
 	fake := fakeRoleAssignmentControlPlane(t)
-	r, createResp := createRoleAssignment(t, fake, "principal-1")
+	r, createResp := createRoleAssignment(t, fake, "principal-1", noUntil())
 	fake.held = map[string]map[string]any{}
 
 	readResp := resource.ReadResponse{State: createResp.State}
@@ -180,7 +203,7 @@ func TestRoleAssignmentGoneReadsAsRemoved(t *testing.T) {
 
 func TestRoleAssignmentDeleteIsIdempotent(t *testing.T) {
 	fake := fakeRoleAssignmentControlPlane(t)
-	r, createResp := createRoleAssignment(t, fake, "principal-1")
+	r, createResp := createRoleAssignment(t, fake, "principal-1", noUntil())
 
 	for i := 0; i < 2; i++ {
 		delResp := resource.DeleteResponse{State: createResp.State}
@@ -204,27 +227,22 @@ func TestRoleAssignmentUpdateIsRefused(t *testing.T) {
 
 func TestRoleAssignmentSchema(t *testing.T) {
 	sch, _ := roleAssignmentSchema(t, &roleAssignmentResource{})
-	for _, name := range []string{"role_id", "subject_kind", "subject_ref"} {
-		attr, ok := sch.Attributes[name].(schema.StringAttribute)
-		if !ok || !attr.IsRequired() || len(attr.PlanModifiers) == 0 {
-			t.Errorf("%s must be required and replace the resource", name)
+	for _, retired := range []string{"role_id", "subject_kind", "subject_ref"} {
+		if _, ok := sch.Attributes[retired]; ok {
+			t.Errorf("%s is retired", retired)
 		}
+	}
+	for _, name := range []string{"definition_id", "environment_ref", "until", "scope_ref"} {
+		attr, ok := sch.Attributes[name].(schema.StringAttribute)
+		if !ok || len(attr.PlanModifiers) == 0 {
+			t.Errorf("%s must replace the resource", name)
+		}
+	}
+	principal, ok := sch.Attributes["principal"].(schema.SingleNestedAttribute)
+	if !ok || !principal.IsRequired() || len(principal.PlanModifiers) == 0 {
+		t.Error("principal must be required and replace the resource")
 	}
 	if id := sch.Attributes["id"]; !id.IsComputed() || id.IsOptional() {
 		t.Error("id must be Computed and not Optional")
-	}
-
-	check := func(in string) bool {
-		var resp validator.StringResponse
-		stringOneOfValidator{allowed: roleAssignmentSubjectKinds}.ValidateString(context.Background(),
-			validator.StringRequest{ConfigValue: types.StringValue(in)}, &resp)
-		return !resp.Diagnostics.HasError()
-	}
-	if !check("service") || !check("user") || check("svc") || check("Service") {
-		t.Error("subject_kind must accept the SubjectKind values only")
-	}
-	// XEMA-10246: the server's SubjectKind names a team `team`; it refuses `group` (422 RESOURCE_SPEC_INVALID).
-	if !check("team") || check("group") {
-		t.Error("subject_kind must accept team and refuse group")
 	}
 }
