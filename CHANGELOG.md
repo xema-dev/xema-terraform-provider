@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- XEMA-11489: **Breaking:** `xema_role` and `xema_role_assignment` follow the
+  control plane's move to authorization-api role definitions and bindings, which
+  refuses the old fields (400 `ROLE_SPEC_FIELD_RETIRED` and
+  `ROLE_ASSIGNMENT_SPEC_FIELD_RETIRED`).
+  - `xema_role`: `grants` is removed; the required `pattern` (a JSON object,
+    `{ clauses: [{ actions, where?, except?, bound? }] }`, write it with
+    `jsonencode`) replaces it. The `xema_role` data source exposes `pattern`
+    instead of `grants`. `slug` still replaces the resource.
+  - `xema_role_assignment`: `role_id`, `subject_kind` and `subject_ref` are
+    removed. Use `definition_id` (the `xema_role` id), `principal = { kind, ref }`
+    and the optional `scope_ref`, `environment_ref` and `until`. A binding has no
+    update, so any change replaces it; the id is now the binding id.
+  - Upgrade: state for old roles and assignments reads as gone. Run
+    `terraform state rm` on each `xema_role` and `xema_role_assignment`, then
+    re-create them from the new configuration (or `terraform import` them by id).
+    The `xema_role` and `xema_role_assignment` schemas also changed, so rewrite
+    the configuration before `plan`.
 - XEMA-11420: `xema_role_assignment.subject_kind` accepts `team` and no longer
   accepts `group`, following authorization-api's SubjectKind (XEMA-10246 renamed
   Group to Team; the server refuses `group` with 422 RESOURCE_SPEC_INVALID, so a

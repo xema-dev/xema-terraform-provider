@@ -5,13 +5,14 @@ package provider
 
 import (
 	"context"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/xema-dev/xema-terraform-provider/internal/client"
@@ -19,16 +20,6 @@ import (
 
 // roleAssignmentKind is the XemaResourceKind wire value for role assignments.
 const roleAssignmentKind = "role-assignment"
-
-// roleAssignmentSubjectKinds is authorization-api's SubjectKind, the closed set
-// the role-assignment kind accepts in `subjectKind`: @xemahq/contracts
-// src/subject/lib/subject.ts, in its order. A team is `team` (XEMA-10246 renamed
-// Group to Team; the server refuses `group`). The provider has no generated Go
-// client to take it from, so this list follows that enum by hand.
-var roleAssignmentSubjectKinds = []string{
-	"user", "agent", "app", "app-client", "service", "team", "role", "runner",
-	"external-subject", "anon", "organization", "org-administrators",
-}
 
 var (
 	_ resource.Resource                = (*roleAssignmentResource)(nil)
@@ -45,14 +36,23 @@ func NewRoleAssignmentResource() resource.Resource {
 	return &roleAssignmentResource{}
 }
 
-// roleAssignmentModel mirrors the role-assignment kind spec { roleId,
-// subjectKind, subjectRef }. All three name the assignment and none configures
-// it, so the id is the key itself: `<roleId>:<subjectKind>:<subjectRef>`.
+// roleAssignmentPrincipalModel is the principal holding the role: `{ kind, ref }`.
+type roleAssignmentPrincipalModel struct {
+	Kind types.String `tfsdk:"kind"`
+	Ref  types.String `tfsdk:"ref"`
+}
+
+// roleAssignmentModel mirrors the role-assignment kind spec { definitionId,
+// principal, scopeRef?, environmentRef?, until? }: one role definition bound to
+// one principal. The id is the binding id the server mints. The server has no
+// update, so every attribute replaces the resource.
 type roleAssignmentModel struct {
-	ID          types.String `tfsdk:"id"`
-	RoleID      types.String `tfsdk:"role_id"`
-	SubjectKind types.String `tfsdk:"subject_kind"`
-	SubjectRef  types.String `tfsdk:"subject_ref"`
+	ID             types.String                  `tfsdk:"id"`
+	DefinitionID   types.String                  `tfsdk:"definition_id"`
+	Principal      *roleAssignmentPrincipalModel `tfsdk:"principal"`
+	ScopeRef       types.String                  `tfsdk:"scope_ref"`
+	EnvironmentRef types.String                  `tfsdk:"environment_ref"`
+	Until          types.String                  `tfsdk:"until"`
 }
 
 func (r *roleAssignmentResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -62,34 +62,56 @@ func (r *roleAssignmentResource) Metadata(_ context.Context, req resource.Metada
 func (r *roleAssignmentResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	replace := []planmodifier.String{stringplanmodifier.RequiresReplace()}
 	resp.Schema = schema.Schema{
-		Description: "One org role held by one subject in the organization, e.g. a pipeline's service " +
-			"identity holding a custom role. Managed through authorization-api's org-admin role routes " +
+		Description: "One role definition held by one principal in the organization, optionally at a scope " +
+			"and in an environment, optionally until a time. Managed through authorization-api's bindings " +
 			"via the control plane, with the credential running Terraform: the route accepts a person's " +
 			"token only and refuses a service token by design, so an admin runs the assignment. " +
-			"Every attribute names the assignment, so any change replaces it. Import with " +
-			"`<role_id>:<subject_kind>:<subject_ref>`.",
+			"A binding cannot be updated, so any change replaces it. Import with the binding id.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "`<role_id>:<subject_kind>:<subject_ref>` (the control-plane physical id).",
+				Description: "The binding id (the control-plane physical id).",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
-			"role_id": schema.StringAttribute{
+			"definition_id": schema.StringAttribute{
 				Required:      true,
-				Description:   "Id of the role to assign: a built-in role or one of the org's custom roles (`xema_role.<name>.id`).",
+				Description:   "Id of the role definition to assign (`xema_role.<name>.id`).",
 				PlanModifiers: replace,
 			},
-			"subject_kind": schema.StringAttribute{
+			"principal": schema.SingleNestedAttribute{
 				Required:      true,
-				Description:   "Kind of subject that holds the role, e.g. `service` or `user`.",
-				PlanModifiers: replace,
-				Validators:    []validator.String{stringOneOfValidator{allowed: roleAssignmentSubjectKinds}},
+				Description:   "The principal that holds the role.",
+				PlanModifiers: []planmodifier.Object{objectplanmodifier.RequiresReplace()},
+				Attributes: map[string]schema.Attribute{
+					"kind": schema.StringAttribute{
+						Required:    true,
+						Description: "Kind of principal, e.g. `service` or `user`; authorization-api refuses a kind it does not know.",
+					},
+					"ref": schema.StringAttribute{
+						Required:    true,
+						Description: "The principal's id, e.g. a service identity's principal id.",
+					},
+				},
 			},
-			"subject_ref": schema.StringAttribute{
-				Required:      true,
-				Description:   "The subject's id, e.g. a service identity's principal id.",
+			"scope_ref": schema.StringAttribute{
+				Optional:    true,
+				Computed:    true,
+				Description: "Scope the role is held at. Unset is the organization root, which reads back here.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
+			"environment_ref": schema.StringAttribute{
+				Optional:      true,
+				Description:   "Environment the role is held in; unset for every environment.",
+				PlanModifiers: replace,
+			},
+			"until": schema.StringAttribute{
+				Optional:      true,
+				Description:   "RFC 3339 date-time after which the assignment stops holding; unset for no end.",
 				PlanModifiers: replace,
 			},
 		},
@@ -101,17 +123,49 @@ func (r *roleAssignmentResource) Configure(_ context.Context, req resource.Confi
 }
 
 func (m roleAssignmentModel) toSpec() map[string]any {
-	return map[string]any{
-		"roleId":      m.RoleID.ValueString(),
-		"subjectKind": m.SubjectKind.ValueString(),
-		"subjectRef":  m.SubjectRef.ValueString(),
+	spec := map[string]any{"definitionId": m.DefinitionID.ValueString()}
+	if m.Principal != nil {
+		spec["principal"] = map[string]any{
+			"kind": m.Principal.Kind.ValueString(),
+			"ref":  m.Principal.Ref.ValueString(),
+		}
 	}
+	if v := optString(m.ScopeRef); v != "" {
+		spec["scopeRef"] = v
+	}
+	if v := optString(m.EnvironmentRef); v != "" {
+		spec["environmentRef"] = v
+	}
+	if v := optString(m.Until); v != "" {
+		spec["until"] = v
+	}
+	return spec
 }
 
+// sameInstant reports whether two RFC 3339 strings name the same time, so the
+// server's ISO form of `until` does not read as a change from the declared one.
+func sameInstant(a, b string) bool {
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	return errA == nil && errB == nil && ta.Equal(tb)
+}
+
+// applyReadback sets the model from the server's spec; the declared `until` is
+// kept when the server's value is the same instant.
 func (m *roleAssignmentModel) applyReadback(spec map[string]any) {
-	m.RoleID = types.StringValue(specString(spec, "roleId"))
-	m.SubjectKind = types.StringValue(specString(spec, "subjectKind"))
-	m.SubjectRef = types.StringValue(specString(spec, "subjectRef"))
+	m.DefinitionID = types.StringValue(specString(spec, "definitionId"))
+	principal, _ := spec["principal"].(map[string]any)
+	m.Principal = &roleAssignmentPrincipalModel{
+		Kind: types.StringValue(specString(principal, "kind")),
+		Ref:  types.StringValue(specString(principal, "ref")),
+	}
+	m.ScopeRef = types.StringValue(specString(spec, "scopeRef"))
+	m.EnvironmentRef = strOrNull(specString(spec, "environmentRef"))
+	live := specString(spec, "until")
+	if live != "" && !m.Until.IsNull() && !m.Until.IsUnknown() && sameInstant(live, m.Until.ValueString()) {
+		return
+	}
+	m.Until = strOrNull(live)
 }
 
 func (r *roleAssignmentResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -161,7 +215,7 @@ func (r *roleAssignmentResource) Read(ctx context.Context, req resource.ReadRequ
 // rather than write, as the control-plane kind does.
 func (r *roleAssignmentResource) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
 	resp.Diagnostics.AddError("Role assignments are immutable",
-		"A role assignment has no field to change; a different role or subject replaces the resource.")
+		"A role assignment has no field to change; a different definition, principal, scope, environment or end replaces the resource.")
 }
 
 // Delete withdraws the assignment; one that is already gone is done.

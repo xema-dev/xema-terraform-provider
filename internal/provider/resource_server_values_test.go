@@ -22,7 +22,8 @@ import (
 var notServerFilled = map[string]string{
 	"xema_provider.api_key":                              "write-only secret: the API never returns it",
 	"xema_biome_install.accept_permissions":              "operator intent sent with the install: the server never reports it, so the read-back keeps the configured value",
-	"xema_role.grants":                                   "the declaration is the whole grant set: unset sends the empty set, and the read-back keeps the declared value wherever the server's means the same",
+	"xema_role_assignment.environment_ref":               "the author's environment: the server stores what it is given, else nothing",
+	"xema_role_assignment.until":                         "the author's end time: the server stores what it is given, else nothing",
 	"xema_service_principal.description":                 "the author's text: the server stores what it is given, else nothing",
 	"xema_service_principal.rotation_trigger":            "a provider-side trigger the server never sees",
 	"xema_credential_binding.secret_version":             "a provider-side rotation label the server never sees",
@@ -69,7 +70,7 @@ func TestIdentityAttributesPlanAReplacement(t *testing.T) {
 		"xema_team":               {"slug"},
 		"xema_environment":        {"slug", "kind"},
 		"xema_role":               {"slug"},
-		"xema_role_assignment":    {"role_id", "subject_kind", "subject_ref"},
+		"xema_role_assignment":    {"definition_id", "scope_ref", "environment_ref", "until"},
 		"xema_skill":              {"slug", "scope", "kind", "parent_slug"},
 		"xema_portal":             {"slug"},
 		"xema_service_principal":  {"name", "display_name"},

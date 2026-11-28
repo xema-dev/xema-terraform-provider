@@ -220,19 +220,21 @@ or key-order differences never show as drift.
 > existing install updates nothing. It is intent only: it is never read back, so
 > it never reads as drift, an import leaves it unset, and changing it never
 > replaces the install. The `xema_biome_install` data source does not expose it.
-> **`xema_role`** declares a custom role and its complete `grants` set (each a
-> `capability` such as `authorization:installation-consent.decide@1`, an
-> `environment` such as `org`, and optional `requires_approval`, `constraints`
-> and `where`). The provider always sends `grants`: leaving it unset declares
-> the empty set, so apply withdraws every grant the role holds, including ones
-> added outside Terraform. Who holds the role is not part of it.
-> **`xema_role_assignment`** assigns one role to one subject in the org
-> (`role_id`, `subject_kind` such as `service` or `user`, `subject_ref`). Every
-> attribute replaces it; its id is `<role_id>:<subject_kind>:<subject_ref>`
-> (import with that), and destroying one that is already gone succeeds. The
-> credential running Terraform must be a person's (an org admin who may confer
-> the role): the role-assignment route refuses a service token by design, so a
-> pipeline never assigns roles, its own included.
+> **`xema_role`** declares a custom role definition: `slug` (replaces on
+> change), `display_name`, optional `description` and `pattern`, a JSON object
+> (write it with `jsonencode`) of `{ clauses: [{ actions, where?, except?,
+> bound? }] }`. `grants` is retired: the control plane refuses it with 400
+> `ROLE_SPEC_FIELD_RETIRED`. Who holds the role is not part of it.
+> **`xema_role_assignment`** binds one role definition to one principal
+> (`definition_id`, usually `xema_role.<name>.id`; `principal = { kind, ref }`
+> such as `service` or `user`), optionally at a `scope_ref` (unset is the org
+> root, which reads back), in an `environment_ref`, and until an RFC 3339
+> `until`. A binding cannot be updated, so every attribute replaces it; its id
+> is the binding id (import with that), and destroying one that is already gone
+> succeeds. `role_id`, `subject_kind` and `subject_ref` are retired (400
+> `ROLE_ASSIGNMENT_SPEC_FIELD_RETIRED`). The credential running Terraform must
+> be a person's (an org admin who may confer the role): the route refuses a
+> service token by design, so a pipeline never assigns roles, its own included.
 > **`xema_service_principal`** creates a machine identity with an OAuth client
 > (`client_id`, `token_endpoint`, `client_secret`). `name` (lowercase, digits and
 > `-`, at most 40 characters), `display_name` and `description` replace it on any
@@ -276,7 +278,7 @@ as a computed attribute.
 ### Breaking changes in v0.6.0
 
 `xema_grant` and `data.xema_grant` are removed. Declare a `xema_role` with the
-capability in its `grants` and assign it with `xema_role_assignment`. Before
+capability in its `pattern` and assign it with `xema_role_assignment`. Before
 upgrading, run `terraform state rm` on every `xema_grant` resource and
 `data.xema_grant` address, or the new provider cannot read the old state.
 

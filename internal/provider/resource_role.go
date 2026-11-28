@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -34,16 +35,16 @@ func NewRoleResource() resource.Resource {
 	return &roleResource{}
 }
 
-// roleModel mirrors the role kind spec (slug, displayName, description, grants)
+// roleModel mirrors the role kind spec (slug, displayName, description, pattern)
 // plus the server-owned physical id stored in state. The slug is the immutable
 // natural key; built-in roles are not manageable here. Who holds the role is
 // not part of it: that is `xema_role_assignment`.
 type roleModel struct {
-	ID          types.String     `tfsdk:"id"`
-	Slug        types.String     `tfsdk:"slug"`
-	DisplayName types.String     `tfsdk:"display_name"`
-	Description types.String     `tfsdk:"description"`
-	Grants      []roleGrantModel `tfsdk:"grants"`
+	ID          types.String         `tfsdk:"id"`
+	Slug        types.String         `tfsdk:"slug"`
+	DisplayName types.String         `tfsdk:"display_name"`
+	Description types.String         `tfsdk:"description"`
+	Pattern     jsontypes.Normalized `tfsdk:"pattern"`
 }
 
 func (r *roleResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -52,7 +53,7 @@ func (r *roleResource) Metadata(_ context.Context, req resource.MetadataRequest,
 
 func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "A Xema custom role (permission set) and the grants it holds, managed through " +
+		Description: "A Xema custom role: a role definition whose `pattern` says what it permits, managed through " +
 			"authorization-api via the control plane. Who holds the role is declared with `xema_role_assignment`.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -78,10 +79,12 @@ func (r *roleResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				Computed:    true,
 				Description: "Free-form role description.",
 			},
-			"grants": schema.SetNestedAttribute{
-				Optional:     true,
-				Description:  roleGrantsDescription,
-				NestedObject: schema.NestedAttributeObject{Attributes: roleGrantAttributes()},
+			"pattern": schema.StringAttribute{
+				Required:   true,
+				CustomType: jsontypes.NormalizedType{},
+				Description: "The role's pattern as a JSON object, `{ \"clauses\": [{ \"actions\": [...], \"where\": ..., " +
+					"\"except\": ..., \"bound\": ... }] }` (`where`, `except` and `bound` are optional); write it with " +
+					"`jsonencode`. It replaces the retired `grants` set.",
 			},
 		},
 	}
@@ -91,19 +94,15 @@ func (r *roleResource) Configure(_ context.Context, req resource.ConfigureReques
 	r.client = clientFromProviderData(req.ProviderData, orgScoped, &resp.Diagnostics)
 }
 
-// toSpec always carries `grants`: the role kind reads an absent `grants` as the
-// empty set, so a declaration that left it out would withdraw every grant on
-// each update. Sending it makes that the configuration's statement, not an
-// accident of omission.
 func (m roleModel) toSpec() (map[string]any, error) {
-	grants, err := roleGrantsToSpec(m.Grants)
+	pattern, err := normalizedToValue(m.Pattern)
 	if err != nil {
 		return nil, err
 	}
 	spec := map[string]any{
 		"slug":        m.Slug.ValueString(),
 		"displayName": m.DisplayName.ValueString(),
-		"grants":      grants,
+		"pattern":     pattern,
 	}
 	if d := optString(m.Description); d != "" {
 		spec["description"] = d
@@ -111,13 +110,12 @@ func (m roleModel) toSpec() (map[string]any, error) {
 	return spec, nil
 }
 
-// applyReadback sets the model from the server's spec; prior is the grant set
-// the plan or state held, kept where the server's value means the same.
-func (m *roleModel) applyReadback(spec map[string]any, prior []roleGrantModel) {
+// applyReadback sets the model from the server's spec.
+func (m *roleModel) applyReadback(spec map[string]any) {
 	m.Slug = types.StringValue(specString(spec, "slug"))
 	m.DisplayName = types.StringValue(specString(spec, "displayName"))
 	m.Description = strOrNull(specString(spec, "description"))
-	m.Grants = roleGrantsFromSpec(spec, prior)
+	m.Pattern = specNormalized(spec, "pattern")
 }
 
 func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -129,7 +127,7 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	spec, err := plan.toSpec()
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid role grants", err.Error())
+		resp.Diagnostics.AddError("Invalid role pattern", err.Error())
 		return
 	}
 	handle, err := r.client.Create(ctx, roleKind, spec)
@@ -144,7 +142,7 @@ func (r *roleResource) Create(ctx context.Context, req resource.CreateRequest, r
 		resp.Diagnostics.AddError("Failed to read role after create", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec, plan.Grants)
+	plan.applyReadback(res.Spec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -164,7 +162,7 @@ func (r *roleResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		resp.Diagnostics.AddError("Failed to read role", err.Error())
 		return
 	}
-	state.applyReadback(res.Spec, state.Grants)
+	state.applyReadback(res.Spec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -177,7 +175,7 @@ func (r *roleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 
 	spec, err := plan.toSpec()
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid role grants", err.Error())
+		resp.Diagnostics.AddError("Invalid role pattern", err.Error())
 		return
 	}
 	res, err := r.client.Update(ctx, roleKind, plan.ID.ValueString(), spec)
@@ -185,7 +183,7 @@ func (r *roleResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		resp.Diagnostics.AddError("Failed to update role", err.Error())
 		return
 	}
-	plan.applyReadback(res.Spec, plan.Grants)
+	plan.applyReadback(res.Spec)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

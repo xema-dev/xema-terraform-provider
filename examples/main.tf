@@ -118,27 +118,25 @@ resource "xema_public_exposure" "this" {
   ]
 }
 
-# A custom org role (permission set).
+# A custom org role: a definition whose pattern says what it permits.
 resource "xema_role" "kb_editor" {
   slug         = "kb-editor"
   display_name = "Knowledge Base Editor"
   description  = "Can edit knowledge-base deliverables."
+  pattern = jsonencode({
+    clauses = [{ actions = ["deliverable:edit@1"] }]
+  })
 }
 
-# A custom role holding the consent-decide grant, so a pipeline's service
-# identity can approve the permissions a biome install asks for. `grants` is
-# the role's complete grant set: leaving it unset declares none.
+# A custom role whose pattern allows the consent-decide action, so a pipeline's
+# service identity can approve the permissions a biome install asks for.
 resource "xema_role" "consent_decider" {
   slug         = "installation-consent-decider"
   display_name = "Installation consent decider"
   description  = "May decide installation permission consent for this org."
-
-  grants = [
-    {
-      capability  = "authorization:installation-consent.decide@1"
-      environment = "org"
-    },
-  ]
+  pattern = jsonencode({
+    clauses = [{ actions = ["authorization:installation-consent.decide@1"] }]
+  })
 }
 
 variable "pipeline_principal_id" {
@@ -149,9 +147,11 @@ variable "pipeline_principal_id" {
 # The pipeline's service identity holds that role. Apply this with a person's
 # credential (an org admin): assigning roles refuses a service token by design.
 resource "xema_role_assignment" "pipeline_consent_decider" {
-  role_id      = xema_role.consent_decider.id
-  subject_kind = "service"
-  subject_ref  = var.pipeline_principal_id
+  definition_id = xema_role.consent_decider.id
+  principal = {
+    kind = "service"
+    ref  = var.pipeline_principal_id
+  }
 }
 
 # A pipeline's service principal. The client secret is returned once and is
